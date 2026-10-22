@@ -15,8 +15,7 @@ import { Category } from '../models/report.model';
   template: `
     <ion-header>
       <ion-toolbar>
-        <ion-title>Home</ion-title>
-        <ion-buttons slot="end"><ion-button (click)="logout()">Logout</ion-button></ion-buttons>
+<ion-title>Account</ion-title>        <ion-buttons slot="end"><ion-button (click)="logout()">Logout</ion-button></ion-buttons>
       </ion-toolbar>
     </ion-header>
 
