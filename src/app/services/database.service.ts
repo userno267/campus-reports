@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Capacitor } from '@capacitor/core';
 import { CapacitorSQLite, SQLiteConnection, SQLiteDBConnection } from '@capacitor-community/sqlite';
-import { Category } from '../models/report.model';
+import { Category, NewReportInput } from '../models/report.model';
 import { Role, User } from '../models/user.model';
 import { hashPassword } from '../utils/hash';
 
@@ -184,5 +184,29 @@ export class DatabaseService {
   async getCategories(): Promise<Category[]> {
     await this.ready;
     return this.all<Category>('SELECT id, name FROM categories ORDER BY id');
+  }
+
+  // ---------- Reports ----------
+
+  // Inserts the report AND its first status_history row ("submitted").
+  // Returns the new report's id.
+  async createReport(input: NewReportInput, userId: number): Promise<number> {
+    await this.ready;
+    const now = new Date().toISOString(); // UTC ISO string
+
+    const result = await this.run(
+      `INSERT INTO reports (title, category_id, description, status, created_by, created_at)
+       VALUES (?, ?, ?, 'submitted', ?, ?)`,
+      [input.title, input.category_id, input.description, userId, now]
+    );
+    const reportId = result.changes?.lastId as number;
+
+    await this.run(
+      `INSERT INTO status_history (report_id, status, remark, changed_by, changed_at)
+       VALUES (?, 'submitted', NULL, ?, ?)`,
+      [reportId, userId, now]
+    );
+
+    return reportId;
   }
 }

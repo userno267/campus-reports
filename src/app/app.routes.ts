@@ -28,8 +28,11 @@ export const routes: Routes = [
 
       // ----- Faculty tabs -----
       { path: 'faculty-home', canActivate: [roleGuard('faculty')], data: { title: 'Home' }, loadComponent: placeholder },
-      { path: 'new-report', canActivate: [roleGuard('faculty')], data: { title: 'New Report' }, loadComponent: placeholder },
-      { path: 'my-reports', canActivate: [roleGuard('faculty')], data: { title: 'My Reports' }, loadComponent: placeholder },
+{
+  path: 'new-report',
+  canActivate: [roleGuard('faculty')],
+  loadComponent: () => import('./pages/new-report.page').then((m) => m.NewReportPage),
+},      { path: 'my-reports', canActivate: [roleGuard('faculty')], data: { title: 'My Reports' }, loadComponent: placeholder },
 
       // ----- Admin tabs -----
       { path: 'dashboard', canActivate: [roleGuard('admin')], data: { title: 'Dashboard' }, loadComponent: placeholder },

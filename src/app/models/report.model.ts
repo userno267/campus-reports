@@ -32,3 +32,9 @@ export interface StatusHistory {
   changed_by: number;
   changed_at: string;
 }
+
+export interface NewReportInput {
+  title: string;
+  category_id: number | null;
+  description: string | null;
+}
