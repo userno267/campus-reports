@@ -15,7 +15,7 @@ export const routes: Routes = [
   },
 
   { path: 'home', redirectTo: '', pathMatch: 'full' },
-
+  { path: 'test-reports', loadComponent: () => import('./pages/test-reports.page').then((m) => m.TestReportsPage) },
   {
     path: 'tabs',
     canActivate: [authGuard], // must be logged in

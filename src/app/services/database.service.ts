@@ -83,45 +83,68 @@ export class DatabaseService {
   // ---------- Setup ----------
 
   private async init(): Promise<void> {
+    console.log('[DB] Initializing database...');
     if (this.isWeb) {
+      console.log('[DB] Platform is web, initializing web store...');
       await this.sqlite.initWebStore();
     }
 
-    // Reuse the connection if it already exists (happens on hot reload)
-    const consistent = (await this.sqlite.checkConnectionsConsistency()).result;
-    const exists = (await this.sqlite.isConnection(DB_NAME, false)).result;
-
-    if (consistent && exists) {
-      this.db = await this.sqlite.retrieveConnection(DB_NAME, false);
-    } else {
-      this.db = await this.sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false);
+    // For web: check if we need to load from IndexedDB
+    let dbExists = false;
+    if (this.isWeb) {
+      try {
+        const result = await this.sqlite.checkConnectionsConsistency();
+        dbExists = result.result ?? false;
+        console.log('[DB] checkConnectionsConsistency result:', dbExists);
+      } catch (e) {
+        console.log('[DB] Error checking consistency:', e);
+      }
     }
 
-    await this.db.open();
-    await this.db.execute(SCHEMA);
-    await this.seed();
-    await this.persist();
-  }
+    // If database doesn't exist in memory but might be in IndexedDB, 
+    // we still need to create/open it fresh (jeep-sqlite will load from store if it exists)
+    console.log('[DB] Creating/opening connection to:', DB_NAME);
+    this.db = await this.sqlite.createConnection(DB_NAME, false, 'no-encryption', 1, false);
 
+    await this.db.open();
+    console.log('[DB] Database opened');
+    await this.db.execute(SCHEMA);
+    console.log('[DB] Schema executed');
+    await this.seed();
+    console.log('[DB] Seeding complete');
+    await this.persist();
+    console.log('[DB] Database ready!');
+  }
   // On the web, SQLite lives in memory until it is saved to IndexedDB.
   // Forgetting this = data disappears on page refresh.
     private async persist(): Promise<void> {
     if (this.isWeb) {
-      console.log('Saving to IndexedDB...');
-      await this.sqlite.saveToStore(DB_NAME);
-      console.log('Saved to IndexedDB!');
+      try {
+        console.log('[DB] [PERSIST] Saving database to IndexedDB store...');
+        await this.sqlite.saveToStore(DB_NAME);
+        console.log('[DB] [PERSIST] Successfully saved to IndexedDB');
+      } catch (e) {
+        console.error('[DB] [PERSIST] ERROR saving to IndexedDB:', e);
+      }
     }
   }
 
   // Seed categories and demo users (only if the tables are empty).
   private async seed(): Promise<void> {
+    console.log('[DB] Seeding categories...');
     for (const name of ['Facilities', 'IT', 'Classroom', 'Administrative']) {
       await this.db.run('INSERT OR IGNORE INTO categories (name) VALUES (?)', [name]);
     }
+    console.log('[DB] Categories seeded');
 
     const count = await this.db.query('SELECT COUNT(*) AS n FROM users');
-    if (count.values && count.values[0].n > 0) return;
+    console.log('[DB] User count:', count.values?.[0]?.n);
+    if (count.values && count.values[0].n > 0) {
+      console.log('[DB] Users already exist, skipping user seed');
+      return;
+    }
 
+    console.log('[DB] Seeding demo users...');
     const demoUsers: { name: string; email: string; role: Role }[] = [
       { name: 'Ana Reyes (Admin)', email: 'admin@campus.edu', role: 'admin' },
       { name: 'Prof. Ben Cruz', email: 'ben@campus.edu', role: 'faculty' },
@@ -137,23 +160,35 @@ export class DatabaseService {
         [u.name, u.email, hash, u.role]
       );
     }
+    console.log('[DB] Demo users seeded');
   }
 
   // ---------- Small helpers ----------
 
- private async all<T>(sql: string, values: any[] = []): Promise<T[]> {
-    const result = await this.db.query(sql, values);
-    console.log('Query executed:', sql.substring(0, 50), 'Result:', result);
-    return (result.values ?? []) as T[];
+  private async all<T>(sql: string, values: any[] = []): Promise<T[]> {
+    try {
+      const result = await this.db.query(sql, values);
+      console.log('[DB] Query executed:', sql.substring(0, 100) + '...', 'Rows returned:', result.values?.length ?? 0);
+      return (result.values ?? []) as T[];
+    } catch (e: any) {
+      console.error('[DB] Query error:', sql, 'Error:', e);
+      throw e;
+    }
   }
 
-    private async run(sql: string, values: any[] = []) {
-    const result = await this.db.run(sql, values);
-    console.log('SQL executed:', sql, 'Result:', result);
-    await this.persist();
-    console.log('Persisted to IndexedDB');
-    return result;
+  private async run(sql: string, values: any[] = []) {
+    try {
+      const result = await this.db.run(sql, values);
+      console.log('[DB] Executed:', sql.substring(0, 100) + '...', 'Changes:', result.changes?.changes);
+      await this.persist();
+      console.log('[DB] Persisted');
+      return result;
+    } catch (e: any) {
+      console.error('[DB] Execute error:', sql, 'Error:', e);
+      throw e;
+    }
   }
+
   // ---------- Users ----------
 
   async getUserRowByEmail(email: string): Promise<UserRow | null> {
@@ -194,40 +229,34 @@ export class DatabaseService {
 
   // Inserts the report AND its first status_history row ("submitted").
   // Returns the new report's id.
-    async createReport(input: NewReportInput, userId: number): Promise<number> {
+  async createReport(input: NewReportInput, userId: number): Promise<number> {
     await this.ready;
     const now = new Date().toISOString(); // UTC ISO string
 
-    console.log('createReport called with:', { input, userId, now });
+    console.log('[DB] createReport called:', { title: input.title, category_id: input.category_id, userId });
 
     const result = await this.run(
-      `INSERT INTO reports (title, category_id, description, status, created_by, created_at)
-       VALUES (?, ?, ?, 'submitted', ?, ?)`,
+      'INSERT INTO reports (title, category_id, description, status, created_by, created_at) VALUES (?, ?, ?, \'submitted\', ?, ?)',
       [input.title, input.category_id, input.description, userId, now]
     );
     const reportId = result.changes?.lastId as number;
 
-    console.log('Report inserted with ID:', reportId);
+    console.log('[DB] Report inserted with ID:', reportId);
 
     await this.run(
-      `INSERT INTO status_history (report_id, status, remark, changed_by, changed_at)
-       VALUES (?, 'submitted', NULL, ?, ?)`,
+      'INSERT INTO status_history (report_id, status, remark, changed_by, changed_at) VALUES (?, \'submitted\', NULL, ?, ?)',
       [reportId, userId, now]
     );
 
-    console.log('Status history inserted');
+    console.log('[DB] Status history inserted for report', reportId);
     return reportId;
   }
+
   // Get all reports (for admin), optionally filtered by status.
   // Returns: {id, title, status, priority, created_at, category_name}
-    async getAllReports(status: string | null = null): Promise<any[]> {
+  async getAllReports(status: string | null = null): Promise<any[]> {
     await this.ready;
-    let sql = `
-      SELECT r.id, r.title, r.status, r.priority, r.created_at,
-             c.name AS category_name
-      FROM reports r
-      LEFT JOIN categories c ON r.category_id = c.id
-    `;
+    let sql = 'SELECT r.id, r.title, r.status, r.priority, r.created_at, c.name AS category_name FROM reports r LEFT JOIN categories c ON r.category_id = c.id';
     const params: any[] = [];
 
     if (status) {
@@ -236,24 +265,19 @@ export class DatabaseService {
     }
 
     sql += ' ORDER BY r.created_at DESC';
+    console.log('[DB] getAllReports called with status:', status);
     const result = await this.all<any>(sql, params);
-    console.log('getAllReports result:', result);  // <-- ADD THIS
+    console.log('[DB] getAllReports returning', result.length, 'reports');
     return result;
   }
+
   // Get a single report with names joined in (for viewing/editing).
   async getReportById(id: number): Promise<any | null> {
     await this.ready;
-    const rows = await this.all<any>(
-      `SELECT r.*, c.name AS category_name, 
-              u_created.name AS created_by_name,
-              u_routed.name AS routed_to_name
-       FROM reports r
-       LEFT JOIN categories c ON r.category_id = c.id
-       LEFT JOIN users u_created ON r.created_by = u_created.id
-       LEFT JOIN users u_routed ON r.routed_to = u_routed.id
-       WHERE r.id = ?`,
-      [id]
-    );
+    const sql = 'SELECT r.*, c.name AS category_name, u_created.name AS created_by_name, u_routed.name AS routed_to_name FROM reports r LEFT JOIN categories c ON r.category_id = c.id LEFT JOIN users u_created ON r.created_by = u_created.id LEFT JOIN users u_routed ON r.routed_to = u_routed.id WHERE r.id = ?';
+    console.log('[DB] getReportById called for id:', id);
+    const rows = await this.all<any>(sql, [id]);
+    console.log('[DB] getReportById found:', rows.length > 0 ? 'yes' : 'no');
     return rows[0] ?? null;
   }
 
@@ -276,36 +300,37 @@ export class DatabaseService {
       values.push(updates.routed_to);
     }
 
-    if (fields.length === 0) return; // nothing to update
+    if (fields.length === 0) {
+      console.log('[DB] updateReport: no fields to update');
+      return;
+    }
 
     values.push(id);
+    console.log('[DB] updateReport called for id:', id, 'updates:', updates);
     await this.run(
       `UPDATE reports SET ${fields.join(', ')} WHERE id = ?`,
       values
     );
+    console.log('[DB] updateReport complete');
   }
 
   // Get all personnel (role = 'personnel') for the routing dropdown.
- async getPersonnel(): Promise<User[]> {
+  async getPersonnel(): Promise<User[]> {
     await this.ready;
-    return this.all<User>(
+    console.log('[DB] getPersonnel called');
+    const result = await this.all<User>(
       'SELECT id, name, email, role, xp FROM users WHERE role = ? ORDER BY name',
       ['personnel']
     );
+    console.log('[DB] getPersonnel returning', result.length, 'personnel');
+    return result;
   }
 
-  
   // Get reports for a specific user (faculty), optionally filtered by status.
   // Returns: {id, title, status, priority, created_at, category_name}
   async getReportsByUser(userId: number, status: string | null = null): Promise<any[]> {
     await this.ready;
-    let sql = `
-      SELECT r.id, r.title, r.status, r.priority, r.created_at,
-             c.name AS category_name
-      FROM reports r
-      LEFT JOIN categories c ON r.category_id = c.id
-      WHERE r.created_by = ?
-    `;
+    let sql = 'SELECT r.id, r.title, r.status, r.priority, r.created_at, c.name AS category_name FROM reports r LEFT JOIN categories c ON r.category_id = c.id WHERE r.created_by = ?';
     const params: any[] = [userId];
 
     if (status) {
@@ -314,7 +339,9 @@ export class DatabaseService {
     }
 
     sql += ' ORDER BY r.created_at DESC';
-    return this.all<any>(sql, params);
+    console.log('[DB] getReportsByUser called for userId:', userId, 'status:', status);
+    const result = await this.all<any>(sql, params);
+    console.log('[DB] getReportsByUser returning', result.length, 'reports');
+    return result;
   }
 }
-

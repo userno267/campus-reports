@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy, ChangeDetectorRef, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import {
@@ -7,8 +7,9 @@ import {
   IonBadge, IonSegment, IonSegmentButton,
 } from '@ionic/angular';
 import { ReportService } from '../services/report.service';
+import { DatabaseService } from '../services/database.service';
 import { FeedbackService } from '../services/feedback.service';
-import { ReportStatus, Priority } from '../models/report.model';
+import { ReportStatus } from '../models/report.model';
 
 @Component({
   selector: 'app-manage-reports',
@@ -19,6 +20,7 @@ import { ReportStatus, Priority } from '../models/report.model';
     IonModal, IonSelect, IonSelectOption, IonTitle, IonToolbar, IonBadge,
     IonSegment, IonSegmentButton,
   ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-header>
       <ion-toolbar>
@@ -63,7 +65,7 @@ import { ReportStatus, Priority } from '../models/report.model';
     </ion-content>
 
     <!-- Edit modal -->
-    <ion-modal [isOpen]="showEditModal" (didDismiss)="showEditModal = false">
+    <ion-modal #editModal [isOpen]="showEditModal" (didDismiss)="showEditModal = false">
       @if (editingReport) {
         <ion-header>
           <ion-toolbar>
@@ -125,6 +127,7 @@ import { ReportStatus, Priority } from '../models/report.model';
 })
 export class ManageReportsPage implements OnInit {
   private reportService = inject(ReportService);
+  private cdr = inject(ChangeDetectorRef);
   private feedback = inject(FeedbackService);
 
   reports: any[] = [];
@@ -143,9 +146,18 @@ export class ManageReportsPage implements OnInit {
     await this.loadCategories();
   }
 
+  // Ionic keeps tab pages alive, so reload when the tab is viewed
+  async ionViewWillEnter() {
+    console.log('[ManageReports] Tab entered, reloading...');
+    await this.loadReports();
+    this.cdr.markForCheck();
+  }
+
   async loadReports() {
     try {
       this.reports = await this.reportService.getAllReports(this.selectedStatus || null);
+      console.log('[ManageReports] Loaded', this.reports.length, 'reports');
+      this.cdr.markForCheck();
     } catch (e: any) {
       await this.feedback.toast(e.message ?? 'Could not load reports.');
     }
@@ -154,21 +166,18 @@ export class ManageReportsPage implements OnInit {
   async loadPersonnel() {
     try {
       this.personnel = await this.reportService.getPersonnel();
+      this.cdr.markForCheck();
     } catch (e: any) {
       await this.feedback.toast(e.message ?? 'Could not load personnel.');
     }
   }
 
-    async loadCategories() {
+  async loadCategories() {
     try {
-      this.categories = [
-        { id: 1, name: 'Facilities' },
-        { id: 2, name: 'IT' },
-        { id: 3, name: 'Classroom' },
-        { id: 4, name: 'Administrative' },
-      ];
-    } catch {
-      // empty
+      this.categories = await this.reportService.getCategories();
+      this.cdr.markForCheck();
+    } catch (e: any) {
+      await this.feedback.toast(e.message ?? 'Could not load categories.');
     }
   }
 
@@ -187,13 +196,15 @@ export class ManageReportsPage implements OnInit {
 
     this.saving = true;
     try {
-      await this.reportService.updateReport(this.editingReport.id, this.editForm);      await this.feedback.toast('Report updated.', 'success');
+      await this.reportService.updateReport(this.editingReport.id, this.editForm);
+      await this.feedback.toast('Report updated.', 'success');
       this.showEditModal = false;
       await this.loadReports();
     } catch (e: any) {
       await this.feedback.toast(e.message ?? 'Could not save changes.');
     } finally {
       this.saving = false;
+      this.cdr.markForCheck();
     }
   }
 

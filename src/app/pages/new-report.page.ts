@@ -1,22 +1,25 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { CommonModule } from '@angular/common';
 import {
   IonButton, IonContent, IonHeader, IonInput, IonItem, IonList,
-  IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
+  IonTextarea, IonTitle, IonToolbar,
 } from '@ionic/angular';
 import { Category } from '../models/report.model';
-import { DatabaseService } from '../services/database.service';
-import { FeedbackService } from '../services/feedback.service';
 import { ReportService } from '../services/report.service';
+import { FeedbackService } from '../services/feedback.service';
+import { CategorySearchComponent } from '../components/category-search.component';
 
 @Component({
   selector: 'app-new-report',
   standalone: true,
   imports: [
-    FormsModule, IonButton, IonContent, IonHeader, IonInput, IonItem, IonList,
-    IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
+    CommonModule, FormsModule, CategorySearchComponent,
+    IonButton, IonContent, IonHeader, IonInput, IonItem, IonList,
+    IonTextarea, IonTitle, IonToolbar,
   ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <ion-header>
       <ion-toolbar><ion-title>New Report</ion-title></ion-toolbar>
@@ -30,11 +33,10 @@ import { ReportService } from '../services/report.service';
         </ion-item>
 
         <ion-item>
-          <ion-select label="Category" labelPlacement="floating" [(ngModel)]="categoryId">
-            @for (c of categories; track c.id) {
-              <ion-select-option [value]="c.id">{{ c.name }}</ion-select-option>
-            }
-          </ion-select>
+          <app-category-search 
+            [categories]="categories"
+            (categorySelected)="onCategorySelected($event)">
+          </app-category-search>
         </ion-item>
 
         <ion-item>
@@ -51,43 +53,49 @@ import { ReportService } from '../services/report.service';
   `,
 })
 export class NewReportPage implements OnInit {
-  private db = inject(DatabaseService);
-  private reports = inject(ReportService);
+  private reportService = inject(ReportService);
   private feedback = inject(FeedbackService);
   private router = inject(Router);
+  private cdr = inject(ChangeDetectorRef);
 
   categories: Category[] = [];
-
-  // Form fields
   title = '';
   categoryId: number | null = null;
   description = '';
-  busy = false; // stops double-taps from submitting twice
+  busy = false;
 
   async ngOnInit() {
     try {
-      this.categories = await this.db.getCategories();
-    } catch {
+      this.categories = await this.reportService.getCategories();
+      console.log('[NewReport] Loaded categories:', this.categories);
+      this.cdr.markForCheck();
+    } catch (e: any) {
+      console.error('[NewReport] Error loading categories:', e);
       await this.feedback.toast('Could not load categories.');
     }
+  }
+
+  onCategorySelected(categoryId: number | null) {
+    this.categoryId = categoryId;
   }
 
   async submit() {
     this.busy = true;
     try {
-      const id = await this.reports.submit({
+      const id = await this.reportService.submit({
         title: this.title,
         category_id: this.categoryId,
         description: this.description,
       });
 
-      this.resetForm(); // Ionic keeps tab pages alive, so clear the form ourselves
+      this.resetForm();
       await this.feedback.toast(`Report #${id} submitted.`, 'success');
       await this.router.navigateByUrl('/tabs/my-reports');
     } catch (e: any) {
       await this.feedback.toast(e.message ?? 'Could not submit the report.');
     } finally {
       this.busy = false;
+      this.cdr.markForCheck();
     }
   }
 
