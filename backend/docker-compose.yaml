@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  www:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: campus-reports-web
+    volumes:
+      - "./:/var/www/html"
+    ports:
+      - "8000:80"
+    environment:
+      - APACHE_DOCUMENT_ROOT=/var/www/html
+    depends_on:
+      - db
+    networks:
+      - campus-network
+
+  db:
+    image: mysql:latest
+    container_name: campus-reports-db
+    environment:
+      - MYSQL_DATABASE=campus_reports
+      - MYSQL_ROOT_PASSWORD=root123
+      - MYSQL_ALLOW_EMPTY_PASSWORD=0
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - campus-network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: campus-reports-pma
+    environment:
+      - PMA_HOST=db
+      - PMA_PORT=3306
+      - PMA_USER=root
+      - PMA_PASSWORD=root123
+    ports:
+      - "8001:80"
+    depends_on:
+      - db
+    networks:
+      - campus-network
+
+volumes:
+  db_data:
+
+networks:
+  campus-network:
+    driver: bridge
