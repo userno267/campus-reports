@@ -105,9 +105,11 @@ export class DatabaseService {
 
   // On the web, SQLite lives in memory until it is saved to IndexedDB.
   // Forgetting this = data disappears on page refresh.
-  private async persist(): Promise<void> {
+    private async persist(): Promise<void> {
     if (this.isWeb) {
+      console.log('Saving to IndexedDB...');
       await this.sqlite.saveToStore(DB_NAME);
+      console.log('Saved to IndexedDB!');
     }
   }
 
@@ -139,17 +141,19 @@ export class DatabaseService {
 
   // ---------- Small helpers ----------
 
-  private async all<T>(sql: string, values: any[] = []): Promise<T[]> {
+ private async all<T>(sql: string, values: any[] = []): Promise<T[]> {
     const result = await this.db.query(sql, values);
+    console.log('Query executed:', sql.substring(0, 50), 'Result:', result);
     return (result.values ?? []) as T[];
   }
 
-  private async run(sql: string, values: any[] = []) {
+    private async run(sql: string, values: any[] = []) {
     const result = await this.db.run(sql, values);
+    console.log('SQL executed:', sql, 'Result:', result);
     await this.persist();
+    console.log('Persisted to IndexedDB');
     return result;
   }
-
   // ---------- Users ----------
 
   async getUserRowByEmail(email: string): Promise<UserRow | null> {
@@ -190,9 +194,11 @@ export class DatabaseService {
 
   // Inserts the report AND its first status_history row ("submitted").
   // Returns the new report's id.
-  async createReport(input: NewReportInput, userId: number): Promise<number> {
+    async createReport(input: NewReportInput, userId: number): Promise<number> {
     await this.ready;
     const now = new Date().toISOString(); // UTC ISO string
+
+    console.log('createReport called with:', { input, userId, now });
 
     const result = await this.run(
       `INSERT INTO reports (title, category_id, description, status, created_by, created_at)
@@ -201,12 +207,114 @@ export class DatabaseService {
     );
     const reportId = result.changes?.lastId as number;
 
+    console.log('Report inserted with ID:', reportId);
+
     await this.run(
       `INSERT INTO status_history (report_id, status, remark, changed_by, changed_at)
        VALUES (?, 'submitted', NULL, ?, ?)`,
       [reportId, userId, now]
     );
 
+    console.log('Status history inserted');
     return reportId;
   }
+  // Get all reports (for admin), optionally filtered by status.
+  // Returns: {id, title, status, priority, created_at, category_name}
+    async getAllReports(status: string | null = null): Promise<any[]> {
+    await this.ready;
+    let sql = `
+      SELECT r.id, r.title, r.status, r.priority, r.created_at,
+             c.name AS category_name
+      FROM reports r
+      LEFT JOIN categories c ON r.category_id = c.id
+    `;
+    const params: any[] = [];
+
+    if (status) {
+      sql += ' WHERE r.status = ?';
+      params.push(status);
+    }
+
+    sql += ' ORDER BY r.created_at DESC';
+    const result = await this.all<any>(sql, params);
+    console.log('getAllReports result:', result);  // <-- ADD THIS
+    return result;
+  }
+  // Get a single report with names joined in (for viewing/editing).
+  async getReportById(id: number): Promise<any | null> {
+    await this.ready;
+    const rows = await this.all<any>(
+      `SELECT r.*, c.name AS category_name, 
+              u_created.name AS created_by_name,
+              u_routed.name AS routed_to_name
+       FROM reports r
+       LEFT JOIN categories c ON r.category_id = c.id
+       LEFT JOIN users u_created ON r.created_by = u_created.id
+       LEFT JOIN users u_routed ON r.routed_to = u_routed.id
+       WHERE r.id = ?`,
+      [id]
+    );
+    return rows[0] ?? null;
+  }
+
+  // Update report fields (admin editing). Only updates the fields passed in.
+  async updateReport(id: number, updates: any): Promise<void> {
+    await this.ready;
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if ('category_id' in updates) {
+      fields.push('category_id = ?');
+      values.push(updates.category_id);
+    }
+    if ('priority' in updates) {
+      fields.push('priority = ?');
+      values.push(updates.priority);
+    }
+    if ('routed_to' in updates) {
+      fields.push('routed_to = ?');
+      values.push(updates.routed_to);
+    }
+
+    if (fields.length === 0) return; // nothing to update
+
+    values.push(id);
+    await this.run(
+      `UPDATE reports SET ${fields.join(', ')} WHERE id = ?`,
+      values
+    );
+  }
+
+  // Get all personnel (role = 'personnel') for the routing dropdown.
+ async getPersonnel(): Promise<User[]> {
+    await this.ready;
+    return this.all<User>(
+      'SELECT id, name, email, role, xp FROM users WHERE role = ? ORDER BY name',
+      ['personnel']
+    );
+  }
+
+  
+  // Get reports for a specific user (faculty), optionally filtered by status.
+  // Returns: {id, title, status, priority, created_at, category_name}
+  async getReportsByUser(userId: number, status: string | null = null): Promise<any[]> {
+    await this.ready;
+    let sql = `
+      SELECT r.id, r.title, r.status, r.priority, r.created_at,
+             c.name AS category_name
+      FROM reports r
+      LEFT JOIN categories c ON r.category_id = c.id
+      WHERE r.created_by = ?
+    `;
+    const params: any[] = [userId];
+
+    if (status) {
+      sql += ' AND r.status = ?';
+      params.push(status);
+    }
+
+    sql += ' ORDER BY r.created_at DESC';
+    return this.all<any>(sql, params);
+  }
 }
+

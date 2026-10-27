@@ -30,5 +30,21 @@ export class ReportService {
       },
       user.id
     );
+    
+  }
+  
+  // Admin: get all reports, optionally filtered by status.
+  async getAllReports(status: string | null = null): Promise<any[]> {
+    return this.db.getAllReports(status);
+  }
+
+  // Admin: update a report's category, priority, or routed_to.
+  async updateReport(id: number, updates: any): Promise<void> {
+    return this.db.updateReport(id, updates);
+  }
+
+  // Get personnel for routing dropdown.
+  async getPersonnel(): Promise<any[]> {
+    return this.db.getPersonnel();
   }
 }

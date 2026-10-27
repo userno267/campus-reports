@@ -31,8 +31,7 @@ export const routes: Routes = [
 },      { path: 'my-reports', canActivate: [roleGuard('faculty')], data: { title: 'My Reports' }, loadComponent: placeholder },
 
       { path: 'dashboard', canActivate: [roleGuard('admin')], data: { title: 'Dashboard' }, loadComponent: placeholder },
-      { path: 'manage-reports', canActivate: [roleGuard('admin')], data: { title: 'Manage Reports' }, loadComponent: placeholder },
-      { path: 'control-center', canActivate: [roleGuard('admin')], data: { title: 'Control Center' }, loadComponent: placeholder },
+      { path: 'manage-reports', canActivate: [roleGuard('admin')], loadComponent: () => import('./pages/manage-reports.page').then((m) => m.ManageReportsPage) },      { path: 'control-center', canActivate: [roleGuard('admin')], data: { title: 'Control Center' }, loadComponent: placeholder },
 
       { path: 'assigned', canActivate: [roleGuard('personnel')], data: { title: 'Assigned Reports' }, loadComponent: placeholder },
 
