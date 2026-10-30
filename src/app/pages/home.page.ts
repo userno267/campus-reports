@@ -5,12 +5,14 @@ import {
   IonList, IonListHeader, IonTitle, IonToolbar,
 } from '@ionic/angular';
 import { AuthService } from '../services/auth.service';
-import { ReportService } from '../services/report.service';
+import { RequestService } from '../services/request.service';
 import { FeedbackService } from '../services/feedback.service';
-import { Category } from '../models/report.model';
+import { RequestCategory } from '../models/request.model';
 
 // The Account tab: shows who is logged in, their role, and the category list.
-// Categories are read from the PHP API (PostgreSQL), the same source as the reports.
+// Categories are read from the PHP API (PostgreSQL), the same source as the requests.
+// Why RequestService: the old ReportService is being retired (Step 10), and
+// RequestService is the service the request screens already use.
 @Component({
   selector: 'app-home',
   standalone: true,
@@ -121,15 +123,15 @@ import { Category } from '../models/report.model';
 })
 export class HomePage implements OnInit {
   auth = inject(AuthService);
-  private reportService = inject(ReportService);
+  private requestService = inject(RequestService);
   private feedback = inject(FeedbackService);
   private router = inject(Router);
 
-  categories: Category[] = [];
+  categories: RequestCategory[] = [];
 
   async ngOnInit() {
     try {
-      this.categories = await this.reportService.getCategories();
+      this.categories = await this.requestService.getCategories();
     } catch (e: any) {
       await this.feedback.toast(e.message ?? 'Could not load categories.');
     }

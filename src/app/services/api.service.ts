@@ -2,7 +2,17 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { Department, RegisterInput, User } from '../models/user.model';
-import { CampusLocation, CreateRequestPayload, RequestSummary } from '../models/request.model';
+import {
+  AdminRequestDetail,
+  AdminRequestRow,
+  AssignRequestPayload,
+  CampusLocation,
+  CancelRequestPayload,
+  CreateRequestPayload,
+  RequestSummary,
+  StaffMember,
+} from '../models/request.model';
+
 // Exported so the interceptor can tell our API apart from other websites.
 export const API_BASE = 'http://localhost:8000/api';
 
@@ -50,59 +60,6 @@ export class ApiService {
     }
   }
 
-  // ===== REPORTS =====
-  async getAllReports(status: string | null = null): Promise<any> {
-    try {
-      let url = `${API_BASE}/reports.php?action=all`;
-      if (status) url += `&status=${status}`;
-      const response: any = await this.http.get(url).toPromise();
-      return response.reports ?? [];
-    } catch (e: any) {
-      throw new Error(e.error?.error ?? 'Failed to load reports');
-    }
-  }
-
-  async getUserReports(userId: number, status: string | null = null): Promise<any> {
-    try {
-      let url = `${API_BASE}/reports.php?action=user&user_id=${userId}`;
-      if (status) url += `&status=${status}`;
-      const response: any = await this.http.get(url).toPromise();
-      return response.reports ?? [];
-    } catch (e: any) {
-      throw new Error(e.error?.error ?? 'Failed to load reports');
-    }
-  }
-
-  async createReport(title: string, categoryId: number | null, description: string | null, userId: number): Promise<any> {
-    try {
-      const response: any = await this.http
-        .post(`${API_BASE}/reports.php?action=create`, {
-          title,
-          category_id: categoryId,
-          description,
-          user_id: userId,
-        })
-        .toPromise();
-      return response.id;
-    } catch (e: any) {
-      throw new Error(e.error?.error ?? 'Failed to create report');
-    }
-  }
-
-  async updateReport(reportId: number, updates: any): Promise<any> {
-    try {
-      const response = await this.http
-        .put(`${API_BASE}/reports.php?action=update`, {
-          id: reportId,
-          ...updates,
-        })
-        .toPromise();
-      return response;
-    } catch (e: any) {
-      throw new Error(e.error?.error ?? 'Failed to update report');
-    }
-  }
-
   // ===== CATEGORIES =====
   async getCategories(): Promise<any> {
     try {
@@ -112,6 +69,7 @@ export class ApiService {
       throw new Error(e.error?.error ?? 'Failed to load categories');
     }
   }
+
   // ===== LOCATIONS =====
   // Any logged-in user may call this. X-User-Id is added by the interceptor.
   async getLocations(): Promise<CampusLocation[]> {
@@ -145,13 +103,59 @@ export class ApiService {
     }
   }
 
-  // ===== PERSONNEL =====
-  async getPersonnel(): Promise<any> {
+  // ===== ADMIN REQUESTS (Step 4) =====
+  async getAdminQueue(): Promise<AdminRequestRow[]> {
     try {
-      const response: any = await this.http.get(`${API_BASE}/personnel.php`).toPromise();
+      const response: any = await firstValueFrom(this.http.get(`${API_BASE}/reports.php?action=queue`));
+      return response.requests ?? [];
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to load the request queue');
+    }
+  }
+
+  async getAdminRequest(id: number): Promise<AdminRequestDetail> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.get(`${API_BASE}/reports.php?action=detail&id=${id}`)
+      );
+      return response.request;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to load the request');
+    }
+  }
+
+  async assignRequest(payload: AssignRequestPayload): Promise<AdminRequestRow> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/reports.php?action=assign`, payload)
+      );
+      return response.request;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Could not assign the request');
+    }
+  }
+
+  async cancelRequest(payload: CancelRequestPayload): Promise<AdminRequestRow> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/reports.php?action=cancel`, payload)
+      );
+      return response.request;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Could not cancel the request');
+    }
+  }
+
+  // Staff list. Pass a department id to filter, or null for everyone.
+  async getStaff(departmentId: number | null = null): Promise<StaffMember[]> {
+    try {
+      const url = departmentId
+        ? `${API_BASE}/personnel.php?department_id=${departmentId}`
+        : `${API_BASE}/personnel.php`;
+      const response: any = await firstValueFrom(this.http.get(url));
       return response.personnel ?? [];
     } catch (e: any) {
-      throw new Error(e.error?.error ?? 'Failed to load personnel');
+      throw new Error(e.error?.error ?? 'Failed to load staff');
     }
   }
 }
