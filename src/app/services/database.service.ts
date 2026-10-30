@@ -149,8 +149,8 @@ export class DatabaseService {
       { name: 'Ana Reyes (Admin)', email: 'admin@campus.edu', role: 'admin' },
       { name: 'Prof. Ben Cruz', email: 'ben@campus.edu', role: 'faculty' },
       { name: 'Prof. Carla Santos', email: 'carla@campus.edu', role: 'faculty' },
-      { name: 'Dan Villanueva (Maintenance)', email: 'dan@campus.edu', role: 'personnel' },
-      { name: 'Ella Garcia (IT Support)', email: 'ella@campus.edu', role: 'personnel' },
+      { name: 'Dan Villanueva (Maintenance)', email: 'dan@campus.edu', role: 'staff' },
+      { name: 'Ella Garcia (IT Support)', email: 'ella@campus.edu', role: 'staff' },
     ];
 
     for (const u of demoUsers) {

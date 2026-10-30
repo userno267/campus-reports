@@ -1,32 +1,52 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { Department, RegisterInput, User } from '../models/user.model';
 
-const API_BASE = 'http://localhost:8000/api';
+// Exported so the interceptor can tell our API apart from other websites.
+export const API_BASE = 'http://localhost:8000/api';
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
 
   // ===== AUTH =====
-  async login(email: string, password: string): Promise<any> {
+  async login(email: string, password: string): Promise<User> {
     try {
-      const response = await this.http
-        .post(`${API_BASE}/auth.php?action=login`, { email, password })
-        .toPromise();
-      return response;
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/auth.php?action=login`, { email, password })
+      );
+      return response.user;
     } catch (e: any) {
       throw new Error(e.error?.error ?? 'Login failed');
     }
   }
 
-  async register(name: string, email: string, password: string): Promise<any> {
+  async register(input: RegisterInput): Promise<User> {
     try {
-      const response = await this.http
-        .post(`${API_BASE}/auth.php?action=register`, { name, email, password })
-        .toPromise();
-      return response;
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/auth.php?action=register`, input)
+      );
+      return response.user;
     } catch (e: any) {
       throw new Error(e.error?.error ?? 'Registration failed');
+    }
+  }
+
+  // Who does the server think I am? (X-User-Id is added by the interceptor.)
+  // Keeps the raw error so AuthService can check e.status === 401.
+  async getCurrentUser(): Promise<User> {
+    const response: any = await firstValueFrom(this.http.get(`${API_BASE}/auth.php?action=me`));
+    return response.user;
+  }
+
+  // ===== DEPARTMENTS =====
+  async getDepartments(): Promise<Department[]> {
+    try {
+      const response: any = await firstValueFrom(this.http.get(`${API_BASE}/departments.php`));
+      return response.departments ?? [];
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to load departments');
     }
   }
 

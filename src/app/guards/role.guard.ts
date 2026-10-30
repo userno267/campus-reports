@@ -7,7 +7,7 @@ import { Role } from '../models/user.model';
 export const ROLE_HOME: Record<Role, string> = {
   faculty: '/tabs/faculty-home',
   admin: '/tabs/dashboard',
-  personnel: '/tabs/assigned',
+  staff: '/tabs/assigned',
 };
 
 // Usage in routes: canActivate: [roleGuard('admin')]

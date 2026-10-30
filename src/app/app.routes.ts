@@ -33,7 +33,7 @@ export const routes: Routes = [
       { path: 'dashboard', canActivate: [roleGuard('admin')], data: { title: 'Dashboard' }, loadComponent: placeholder },
       { path: 'manage-reports', canActivate: [roleGuard('admin')], loadComponent: () => import('./pages/manage-reports.page').then((m) => m.ManageReportsPage) },      { path: 'control-center', canActivate: [roleGuard('admin')], data: { title: 'Control Center' }, loadComponent: placeholder },
 
-      { path: 'assigned', canActivate: [roleGuard('personnel')], data: { title: 'Assigned Reports' }, loadComponent: placeholder },
+      { path: 'assigned', canActivate: [roleGuard('staff')], data: { title: 'Assigned Reports' }, loadComponent: placeholder },
 
       { path: 'account', loadComponent: () => import('./pages/home.page').then((m) => m.HomePage) },
     ],

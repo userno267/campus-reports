@@ -70,7 +70,7 @@ import { AuthService } from '../services/auth.service';
             </ion-tab-button>
           }
 
-          @case ('personnel') {
+          @case ('staff') {
             <ion-tab-button tab="assigned">
               <ion-icon name="people-outline"></ion-icon>
               <ion-label>Assigned</ion-label>
