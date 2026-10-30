@@ -3,136 +3,111 @@ require 'config.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
-$userId = $_GET['user_id'] ?? null;
 
-// ---------- GET all reports (admin), optional ?status= filter ----------
-if ($method === 'GET' && $action === 'all') {
-    $status = $_GET['status'] ?? null;
+// Columns sent to the frontend. Timestamps become ISO strings in UTC.
+// Photos are left out on purpose: they are large, and list screens do not need them.
+$requestColumns = <<<SQL
+    r.id,
+    r.title,
+    r.description,
+    r.status,
+    c.name AS category_name,
+    l.name AS location_name,
+    to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+    to_char(r.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
+SQL;
 
-    $sql = 'SELECT r.*, c.name AS category_name, u.name AS created_by_name, u2.name AS routed_to_name
-            FROM reports r
-            LEFT JOIN categories c ON r.category_id = c.id
-            LEFT JOIN users u ON r.created_by = u.id
-            LEFT JOIN users u2 ON r.routed_to = u2.id';
-    $params = [];
-
-    if ($status) {
-        $sql .= ' WHERE r.status = ?';
-        $params[] = $status;
-    }
-    $sql .= ' ORDER BY r.created_at DESC';
-
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
-    sendResponse(['reports' => $stmt->fetchAll()], 200);
-}
-
-// ---------- GET reports for one user (faculty), optional ?status= filter ----------
-if ($method === 'GET' && $action === 'user' && $userId) {
-    $status = $_GET['status'] ?? null;
-
-    $sql = 'SELECT r.*, c.name AS category_name
-            FROM reports r
-            LEFT JOIN categories c ON r.category_id = c.id
-            WHERE r.created_by = ?';
-    $params = [(int) $userId]; // cast so PostgreSQL gets an integer
-
-    if ($status) {
-        $sql .= ' AND r.status = ?';
-        $params[] = $status;
-    }
-    $sql .= ' ORDER BY r.created_at DESC';
-
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
-    sendResponse(['reports' => $stmt->fetchAll()], 200);
-}
-
-// ---------- POST create a report ----------
+// ---------- POST create a request (faculty only) ----------
 if ($method === 'POST' && $action === 'create') {
-    $data = json_decode(file_get_contents('php://input'), true);
-    $title = trim($data['title'] ?? '');
-    $categoryId = $data['category_id'] ?? null;
-    $description = $data['description'] ?? null;
-    $userId = $data['user_id'] ?? null;
+    $user = requireUser($conn, ['faculty']);
+    $data = getJsonBody();
 
-    if (!$title || !$userId) {
-        sendResponse(['error' => 'Title and user_id required'], 400);
+    $title       = trim((string) ($data['title'] ?? ''));
+    $description = trim((string) ($data['description'] ?? ''));
+    $categoryId  = $data['category_id'] ?? null;
+    $locationId  = $data['location_id'] ?? null;
+    $photo       = (string) ($data['before_photo'] ?? '');
+
+    // Server-side checks. The browser checks too, but the server never trusts the browser.
+    if (mb_strlen($title) < 3 || mb_strlen($title) > 80) {
+        sendResponse(['error' => 'Title must be 3 to 80 characters'], 400);
+    }
+    if ($description === '' || mb_strlen($description) > 500) {
+        sendResponse(['error' => 'Description is required (max 500 characters)'], 400);
+    }
+    if (!is_numeric($categoryId) || !is_numeric($locationId)) {
+        sendResponse(['error' => 'Choose a category and a location'], 400);
+    }
+    if ($photo === '') {
+        sendResponse(['error' => 'A before photo is required'], 400);
+    }
+    if (strlen($photo) > 4000000) {
+        sendResponse(['error' => 'Photo is too large'], 400);
+    }
+    // The photo must be raw base64 (no "data:image/..." prefix).
+    if (!preg_match('/^[A-Za-z0-9+\/=\r\n]+$/', $photo)) {
+        sendResponse(['error' => 'Photo must be sent as base64'], 400);
     }
 
-    // A transaction makes sure the report and its first status row are saved together.
+    // Make sure the category and location really exist.
+    $catCheck = $conn->prepare('SELECT 1 FROM categories WHERE id = ?');
+    $catCheck->execute([(int) $categoryId]);
+    if ($catCheck->fetchColumn() === false) {
+        sendResponse(['error' => 'Category not found'], 400);
+    }
+
+    $locCheck = $conn->prepare('SELECT 1 FROM locations WHERE id = ?');
+    $locCheck->execute([(int) $locationId]);
+    if ($locCheck->fetchColumn() === false) {
+        sendResponse(['error' => 'Location not found'], 400);
+    }
+
+    // Write the request AND its first timeline row together, or neither.
+    $conn->beginTransaction();
     try {
-        $conn->beginTransaction();
-
-        // RETURNING id gives us the new report's id (replaces MySQL's insert_id).
-        $stmt = $conn->prepare(
-            'INSERT INTO reports (title, category_id, description, created_by, created_at)
-             VALUES (?, ?, ?, ?, NOW()) RETURNING id'
+        $insert = $conn->prepare(
+            'INSERT INTO requests (title, description, category_id, location_id, before_photo, status, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
+             RETURNING id'
         );
-        $stmt->execute([$title, $categoryId, $description, $userId]);
-        $reportId = (int) $stmt->fetchColumn();
+        $insert->execute([
+            $title, $description, (int) $categoryId, (int) $locationId,
+            $photo, 'submitted', $user['id'],
+        ]);
+        $newId = (int) $insert->fetchColumn();
 
-        $stmt = $conn->prepare(
-            "INSERT INTO status_history (report_id, status, changed_by, changed_at)
-             VALUES (?, 'submitted', ?, NOW())"
+        // Every status change writes a row to request_events (the timeline).
+        $event = $conn->prepare(
+            'INSERT INTO request_events (request_id, status, remark, changed_by)
+             VALUES (?, ?, ?, ?)'
         );
-        $stmt->execute([$reportId, $userId]);
+        $event->execute([$newId, 'submitted', 'Request submitted', $user['id']]);
 
         $conn->commit();
     } catch (PDOException $e) {
-        if ($conn->inTransaction()) {
-            $conn->rollBack();
-        }
-        error_log('Create report failed: ' . $e->getMessage());
-        sendResponse(['error' => 'Failed to create report'], 400);
+        $conn->rollBack();
+        error_log('Create request failed: ' . $e->getMessage());
+        sendResponse(['error' => 'Could not submit the request'], 500);
     }
 
-    sendResponse(['id' => $reportId, 'message' => 'Report created'], 201);
+    sendResponse(['request' => ['id' => $newId, 'status' => 'submitted']], 201);
 }
 
-// ---------- PUT update category, priority, or routing ----------
-if ($method === 'PUT' && $action === 'update') {
-    $data = json_decode(file_get_contents('php://input'), true);
-    $reportId = $data['id'] ?? null;
-    $categoryId = $data['category_id'] ?? null;
-    $priority = $data['priority'] ?? null;
-    $routedTo = $data['routed_to'] ?? null;
+// ---------- GET my requests (faculty only) ----------
+if ($method === 'GET' && $action === 'mine') {
+    $user = requireUser($conn, ['faculty']);
 
-    if (!$reportId) {
-        sendResponse(['error' => 'Report ID required'], 400);
-    }
+    $stmt = $conn->prepare(
+        'SELECT ' . $requestColumns . '
+         FROM requests r
+         JOIN categories c ON c.id = r.category_id
+         JOIN locations  l ON l.id = r.location_id
+         WHERE r.created_by = ?
+         ORDER BY r.created_at DESC'
+    );
+    $stmt->execute([$user['id']]);
 
-    $updates = [];
-    $params = [];
-
-    if ($categoryId !== null) {
-        $updates[] = 'category_id = ?';
-        $params[] = $categoryId;
-    }
-    if ($priority !== null) {
-        $updates[] = 'priority = ?';   // the CHECK constraint rejects invalid values
-        $params[] = $priority;
-    }
-    if ($routedTo !== null) {
-        $updates[] = 'routed_to = ?';
-        $params[] = $routedTo;
-    }
-
-    if (empty($updates)) {
-        sendResponse(['error' => 'No fields to update'], 400);
-    }
-
-    $params[] = $reportId;
-
-    try {
-        $stmt = $conn->prepare('UPDATE reports SET ' . implode(', ', $updates) . ' WHERE id = ?');
-        $stmt->execute($params);
-    } catch (PDOException $e) {
-        error_log('Update report failed: ' . $e->getMessage());
-        sendResponse(['error' => 'Failed to update report'], 400);
-    }
-
-    sendResponse(['message' => 'Report updated'], 200);
+    sendResponse(['requests' => $stmt->fetchAll()], 200);
 }
 
 sendResponse(['error' => 'Invalid action'], 400);

@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { Department, RegisterInput, User } from '../models/user.model';
-
+import { CampusLocation, CreateRequestPayload, RequestSummary } from '../models/request.model';
 // Exported so the interceptor can tell our API apart from other websites.
 export const API_BASE = 'http://localhost:8000/api';
 
@@ -110,6 +110,38 @@ export class ApiService {
       return response.categories ?? [];
     } catch (e: any) {
       throw new Error(e.error?.error ?? 'Failed to load categories');
+    }
+  }
+  // ===== LOCATIONS =====
+  // Any logged-in user may call this. X-User-Id is added by the interceptor.
+  async getLocations(): Promise<CampusLocation[]> {
+    try {
+      const response: any = await firstValueFrom(this.http.get(`${API_BASE}/locations.php`));
+      return response.locations ?? [];
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to load locations');
+    }
+  }
+
+  // ===== FACULTY REQUESTS (Step 3) =====
+  // The server takes the user from X-User-Id, so no user id is sent in the body.
+  async createRequest(payload: CreateRequestPayload): Promise<{ id: number; status: string }> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/reports.php?action=create`, payload)
+      );
+      return response.request;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to submit the request');
+    }
+  }
+
+  async getMyRequests(): Promise<RequestSummary[]> {
+    try {
+      const response: any = await firstValueFrom(this.http.get(`${API_BASE}/reports.php?action=mine`));
+      return response.requests ?? [];
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to load your requests');
     }
   }
 
