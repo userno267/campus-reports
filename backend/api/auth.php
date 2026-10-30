@@ -4,9 +4,11 @@ require 'config.php';
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 
+// ---------- LOGIN ----------
 if ($method === 'POST' && $action === 'login') {
     $data = json_decode(file_get_contents('php://input'), true);
-    $email = $data['email'] ?? '';
+    // Lowercase the email so it matches how accounts are stored.
+    $email = strtolower(trim($data['email'] ?? ''));
     $password = $data['password'] ?? '';
 
     if (!$email || !$password) {
@@ -14,12 +16,10 @@ if ($method === 'POST' && $action === 'login') {
     }
 
     $hash = hashPassword($email, $password);
+
     $stmt = $conn->prepare('SELECT id, name, email, role, xp FROM users WHERE email = ? AND password_hash = ?');
-    $stmt->bind_param('ss', $email, $hash);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $user = $result->fetch_assoc();
-    $stmt->close();
+    $stmt->execute([$email, $hash]);
+    $user = $stmt->fetch(); // false when no row matches
 
     if (!$user) {
         sendResponse(['error' => 'Invalid email or password'], 401);
@@ -28,10 +28,11 @@ if ($method === 'POST' && $action === 'login') {
     sendResponse(['user' => $user], 200);
 }
 
+// ---------- REGISTER (always creates a faculty account) ----------
 if ($method === 'POST' && $action === 'register') {
     $data = json_decode(file_get_contents('php://input'), true);
-    $name = $data['name'] ?? '';
-    $email = $data['email'] ?? '';
+    $name = trim($data['name'] ?? '');
+    $email = strtolower(trim($data['email'] ?? ''));
     $password = $data['password'] ?? '';
 
     if (!$name || !$email || !$password) {
@@ -43,15 +44,20 @@ if ($method === 'POST' && $action === 'register') {
     }
 
     $hash = hashPassword($email, $password);
-    $stmt = $conn->prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)');
     $role = 'faculty';
-    $stmt->bind_param('ssss', $name, $email, $hash, $role);
 
-    if (!$stmt->execute()) {
-        sendResponse(['error' => 'Email already registered'], 400);
+    try {
+        $stmt = $conn->prepare('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)');
+        $stmt->execute([$name, $email, $hash, $role]);
+    } catch (PDOException $e) {
+        // SQLSTATE 23505 = unique_violation (email already exists in PostgreSQL)
+        if ($e->getCode() === '23505') {
+            sendResponse(['error' => 'Email already registered'], 400);
+        }
+        error_log('Register failed: ' . $e->getMessage());
+        sendResponse(['error' => 'Registration failed'], 500);
     }
 
-    $stmt->close();
     sendResponse(['message' => 'Account created'], 201);
 }
 

@@ -1,4 +1,4 @@
-version: '3.8'
+# The "version" line was removed because Docker Compose no longer uses it.
 
 services:
   www:
@@ -18,27 +18,25 @@ services:
       - campus-network
 
   db:
-    image: mysql:latest
+    image: postgres:16
     container_name: campus-reports-db
     environment:
-      - MYSQL_DATABASE=campus_reports
-      - MYSQL_ROOT_PASSWORD=root123
-      - MYSQL_ALLOW_EMPTY_PASSWORD=0
+      - POSTGRES_DB=campus_reports
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=root123
     volumes:
-      - db_data:/var/lib/mysql
+      - db_data:/var/lib/postgresql/data
     ports:
-      - "3306:3306"
+      - "5432:5432"
     networks:
       - campus-network
 
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    container_name: campus-reports-pma
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: campus-reports-pgadmin
     environment:
-      - PMA_HOST=db
-      - PMA_PORT=3306
-      - PMA_USER=root
-      - PMA_PASSWORD=root123
+      - PGADMIN_DEFAULT_EMAIL=admin@campus.edu
+      - PGADMIN_DEFAULT_PASSWORD=root123
     ports:
       - "8001:80"
     depends_on:

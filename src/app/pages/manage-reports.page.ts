@@ -1,4 +1,4 @@
-import { Component, OnInit, inject, ChangeDetectionStrategy, ChangeDetectorRef, ViewChild } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import {
@@ -7,7 +7,6 @@ import {
   IonBadge, IonSegment, IonSegmentButton,
 } from '@ionic/angular';
 import { ReportService } from '../services/report.service';
-import { DatabaseService } from '../services/database.service';
 import { FeedbackService } from '../services/feedback.service';
 import { ReportStatus } from '../models/report.model';
 
@@ -22,15 +21,15 @@ import { ReportStatus } from '../models/report.model';
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <ion-header>
-      <ion-toolbar>
+    <ion-header class="ion-no-border">
+      <ion-toolbar class="page-toolbar">
         <ion-title>Manage Reports</ion-title>
       </ion-toolbar>
     </ion-header>
 
-    <ion-content class="ion-padding">
+    <ion-content class="ion-padding page-content">
       <!-- Status filter -->
-      <ion-segment [(ngModel)]="selectedStatus" (ionChange)="loadReports()">
+      <ion-segment class="status-filter" [(ngModel)]="selectedStatus" (ionChange)="loadReports()">
         <ion-segment-button value="">All</ion-segment-button>
         <ion-segment-button value="submitted">Submitted</ion-segment-button>
         <ion-segment-button value="validated">Validated</ion-segment-button>
@@ -40,13 +39,13 @@ import { ReportStatus } from '../models/report.model';
 
       <!-- List of reports -->
       @if (reports.length > 0) {
-        <ion-list class="ion-margin-top">
+        <ion-list class="report-list ion-margin-top">
           @for (report of reports; track report.id) {
-            <ion-item button (click)="openEditModal(report)">
+            <ion-item button detail="false" (click)="openEditModal(report)">
               <ion-label>
                 <h2>{{ report.title }}</h2>
                 <p>{{ report.category_name }} · {{ report.priority || '—' }}</p>
-                <p class="ion-text-sm ion-color-medium">
+                <p class="ion-text-sm meta-text">
                   {{ report.status }}
                   @if (report.routed_to_name) {
                     · Routed: {{ report.routed_to_name }}
@@ -60,32 +59,36 @@ import { ReportStatus } from '../models/report.model';
           }
         </ion-list>
       } @else {
-        <p class="ion-text-center ion-margin-top">No reports found.</p>
+        <div class="empty-card ion-margin-top">
+          <p>No reports found.</p>
+        </div>
       }
     </ion-content>
 
     <!-- Edit modal -->
-    <ion-modal #editModal [isOpen]="showEditModal" (didDismiss)="showEditModal = false">
+    <ion-modal #editModal class="edit-modal" [isOpen]="showEditModal" (didDismiss)="showEditModal = false">
       @if (editingReport) {
-        <ion-header>
-          <ion-toolbar>
+        <ion-header class="ion-no-border">
+          <ion-toolbar class="page-toolbar">
             <ion-title>Edit Report #{{ editingReport.id }}</ion-title>
             <ion-buttons slot="end">
-              <ion-button (click)="showEditModal = false">Close</ion-button>
+              <ion-button class="close-btn" (click)="showEditModal = false">Close</ion-button>
             </ion-buttons>
           </ion-toolbar>
         </ion-header>
 
-        <ion-content class="ion-padding">
-          <h3>{{ editingReport.title }}</h3>
-          <p class="ion-color-medium">By {{ editingReport.created_by_name }} on {{ editingReport.created_at | date:'short' }}</p>
+        <ion-content class="ion-padding page-content">
+          <div class="detail-card">
+            <h3 class="detail-title">{{ editingReport.title }}</h3>
+            <p class="meta-text">By {{ editingReport.created_by_name }} on {{ editingReport.created_at | date:'short' }}</p>
 
-          @if (editingReport.description) {
-            <p><strong>Description:</strong> {{ editingReport.description }}</p>
-          }
+            @if (editingReport.description) {
+              <p class="detail-text"><strong>Description:</strong> {{ editingReport.description }}</p>
+            }
+          </div>
 
-          <ion-list>
-            <ion-item>
+          <ion-list class="report-list ion-margin-top">
+            <ion-item detail="false">
               <ion-label>Category</ion-label>
               <ion-select [(ngModel)]="editForm.category_id">
                 <ion-select-option [value]="null">None</ion-select-option>
@@ -95,7 +98,7 @@ import { ReportStatus } from '../models/report.model';
               </ion-select>
             </ion-item>
 
-            <ion-item>
+            <ion-item detail="false">
               <ion-label>Priority</ion-label>
               <ion-select [(ngModel)]="editForm.priority">
                 <ion-select-option [value]="null">None</ion-select-option>
@@ -106,7 +109,7 @@ import { ReportStatus } from '../models/report.model';
               </ion-select>
             </ion-item>
 
-            <ion-item>
+            <ion-item detail="false">
               <ion-label>Route to Personnel</ion-label>
               <ion-select [(ngModel)]="editForm.routed_to">
                 <ion-select-option [value]="null">Unassigned</ion-select-option>
@@ -117,13 +120,130 @@ import { ReportStatus } from '../models/report.model';
             </ion-item>
           </ion-list>
 
-          <ion-button expand="block" class="ion-margin-top" [disabled]="saving" (click)="saveChanges()">
+          <ion-button expand="block" class="save-btn ion-margin-top" [disabled]="saving" (click)="saveChanges()">
             {{ saving ? 'Saving...' : 'Save' }}
           </ion-button>
         </ion-content>
       }
     </ion-modal>
   `,
+  styles: [`
+    /* Same palette as tabs.page.ts and placeholder.page.ts */
+    .page-content {
+      --background: #f6f5ee;
+    }
+
+    .page-toolbar {
+      --background: #fbfaf5;
+      --color: #29483d;
+      border-bottom: 1px solid #e2e8dc;
+    }
+
+    /* Status filter: sage track with a light selected pill */
+    .status-filter {
+      --background: #e8efe3;
+      border-radius: 12px;
+      padding: 3px;
+    }
+
+    .status-filter ion-segment-button {
+      --color: #87958a;
+      --color-checked: #29483d;
+      --indicator-color: #fbfaf5;
+      --indicator-height: 100%;
+      --indicator-border-radius: 10px;
+      min-height: 36px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: none;
+      letter-spacing: 0.2px;
+    }
+
+    /* Report list and modal form: one rounded card with thin dividers */
+    .report-list {
+      background: #fbfaf5;
+      border: 1px solid #e2e8dc;
+      border-radius: 14px;
+      overflow: hidden;
+      padding: 0;
+      box-shadow: 0 4px 14px rgba(32, 59, 53, 0.05);
+    }
+
+    .report-list ion-item {
+      --background: #fbfaf5;
+      --border-color: #e2e8dc;
+      --color: #29483d;
+      --inner-padding-end: 8px;
+    }
+
+    .report-list ion-item h2 {
+      margin: 0 0 4px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #29483d;
+    }
+
+    .report-list ion-item p {
+      margin: 0 0 2px;
+      color: #29483d;
+    }
+
+    .meta-text {
+      color: #87958a !important;
+    }
+
+    .empty-card {
+      background: #fbfaf5;
+      border: 1px solid #e2e8dc;
+      border-radius: 14px;
+      padding: 16px;
+      text-align: center;
+      color: #87958a;
+    }
+
+    .empty-card p {
+      margin: 0;
+    }
+
+    /* Edit modal */
+    .edit-modal {
+      --background: #f6f5ee;
+    }
+
+    .detail-card {
+      background: #fbfaf5;
+      border: 1px solid #e2e8dc;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 4px 14px rgba(32, 59, 53, 0.05);
+    }
+
+    .detail-title {
+      margin: 0 0 6px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #29483d;
+    }
+
+    .detail-text {
+      color: #29483d;
+      margin: 8px 0 0;
+    }
+
+    .close-btn {
+      --color: #29483d;
+    }
+
+    .save-btn {
+      --background: #29483d;
+      --background-activated: #1f382f;
+      --color: #fbfaf5;
+      --border-radius: 14px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      text-transform: none;
+    }
+  `],
 })
 export class ManageReportsPage implements OnInit {
   private reportService = inject(ReportService);
