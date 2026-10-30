@@ -10,7 +10,9 @@ import {
   CancelRequestPayload,
   CreateRequestPayload,
   RequestSummary,
+  StaffJob,
   StaffMember,
+  SubmitProofPayload,
 } from '../models/request.model';
 
 // Exported so the interceptor can tell our API apart from other websites.
@@ -155,7 +157,40 @@ export class ApiService {
       const response: any = await firstValueFrom(this.http.get(url));
       return response.personnel ?? [];
     } catch (e: any) {
-      throw new Error(e.error?.error ?? 'Failed to load staff');
+          throw new Error(e.error?.error ?? 'Failed to load staff');
+    }
+  }
+
+  // ===== STAFF JOBS (Step 5) =====
+  // Returns the staff member's active job, or null when they have none.
+  async getCurrentJob(): Promise<StaffJob | null> {
+    try {
+      const response: any = await firstValueFrom(this.http.get(`${API_BASE}/jobs.php?action=current`));
+      return response.job ?? null;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to load your job');
+    }
+  }
+
+  async startJob(requestId: number): Promise<StaffJob> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/jobs.php?action=start`, { request_id: requestId })
+      );
+      return response.job;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Could not start the job');
+    }
+  }
+
+  async submitProof(payload: SubmitProofPayload): Promise<StaffJob> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/jobs.php?action=proof`, payload)
+      );
+      return response.job;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Could not send the proof');
     }
   }
 }

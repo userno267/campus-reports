@@ -103,3 +103,27 @@ export interface CancelRequestPayload {
   request_id: number;
   remark: string;
 }
+
+// ===== STAFF JOBS (Step 5) =====
+
+// The one job a staff member is working on. Includes both photos and the proof note.
+export interface StaffJob {
+  id: number;
+  title: string;
+  description: string;
+  status: RequestStatus;
+  category_name: string;
+  location_name: string;
+  before_photo: string;                 // raw base64
+  after_photo: string | null;           // raw base64, set when proof is sent
+  proof_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// What the proof call sends. proof_note is null when the staff member leaves it empty.
+export interface SubmitProofPayload {
+  request_id: number;
+  after_photo: string;
+  proof_note: string | null;
+}

@@ -24,19 +24,31 @@ export const routes: Routes = [
       { path: '', pathMatch: 'full', canActivate: [landingGuard], children: [] },
 
       { path: 'faculty-home', canActivate: [roleGuard('faculty')], data: { title: 'Home' }, loadComponent: placeholder },
-{
-  path: 'new-report',
-  canActivate: [roleGuard('faculty')],
-  loadComponent: () => import('./pages/new-report.page').then((m) => m.NewReportPage),
-},           {
+      {
+        path: 'new-report',
+        canActivate: [roleGuard('faculty')],
+        loadComponent: () => import('./pages/new-report.page').then((m) => m.NewReportPage),
+      },
+      {
         path: 'my-reports',
         canActivate: [roleGuard('faculty')],
         loadComponent: () => import('./pages/my-reports.page').then((m) => m.MyReportsPage),
       },
-      { path: 'dashboard', canActivate: [roleGuard('admin')], data: { title: 'Dashboard' }, loadComponent: placeholder },
-      { path: 'manage-reports', canActivate: [roleGuard('admin')], loadComponent: () => import('./pages/manage-reports.page').then((m) => m.ManageReportsPage) },      { path: 'control-center', canActivate: [roleGuard('admin')], data: { title: 'Control Center' }, loadComponent: placeholder },
 
-      { path: 'assigned', canActivate: [roleGuard('staff')], data: { title: 'Assigned Reports' }, loadComponent: placeholder },
+      { path: 'dashboard', canActivate: [roleGuard('admin')], data: { title: 'Dashboard' }, loadComponent: placeholder },
+      {
+        path: 'manage-reports',
+        canActivate: [roleGuard('admin')],
+        loadComponent: () => import('./pages/manage-reports.page').then((m) => m.ManageReportsPage),
+      },
+      { path: 'control-center', canActivate: [roleGuard('admin')], data: { title: 'Control Center' }, loadComponent: placeholder },
+
+      // Step 5: the real staff job screen replaces the placeholder.
+      {
+        path: 'assigned',
+        canActivate: [roleGuard('staff')],
+        loadComponent: () => import('./pages/assigned-job.page').then((m) => m.AssignedJobPage),
+      },
 
       { path: 'account', loadComponent: () => import('./pages/home.page').then((m) => m.HomePage) },
     ],
