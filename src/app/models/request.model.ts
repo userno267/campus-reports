@@ -139,3 +139,23 @@ export interface CreateReviewPayload {
   rating: number;                       // 1 to 5
   comment: string | null;
 }
+
+// ===== STAFF REVIEWS (Step 7) =====
+
+// One review about the logged-in staff member.
+export interface StaffReview {
+  id: number;
+  request_id: number;
+  rating: number;                       // 1 to 5
+  comment: string | null;
+  title: string;                        // the request title
+  location_name: string;
+  reviewer_name: string;                // the faculty member who rated
+  created_at: string;
+}
+
+// The reviews plus a plain count and average. average is null when there are no reviews.
+export interface StaffReviewList {
+  reviews: StaffReview[];
+  summary: { count: number; average: number | null };
+}

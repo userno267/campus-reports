@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { ApiService } from './api.service';
 import { AuthService } from './auth.service';
-import { StaffJob } from '../models/request.model';
+import { StaffJob, StaffReviewList } from '../models/request.model';
 
 // Staff-only wrapper. Pages call this, this calls ApiService.
 // The checks here give quick feedback. The server checks the role and the job owner again.
@@ -38,5 +38,11 @@ export class StaffJobService {
       after_photo: photo,
       proof_note: trimmed === '' ? null : trimmed,
     });
+  }
+
+  // Step 7: reviews faculty left about this staff member's finished jobs.
+  async loadReviews(): Promise<StaffReviewList> {
+    this.requireStaff();
+    return this.api.getStaffReviews();
   }
 }

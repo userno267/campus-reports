@@ -50,6 +50,13 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/assigned-job.page').then((m) => m.AssignedJobPage),
       },
 
+      // Step 7: reviews about the logged-in staff member.
+      {
+        path: 'reviews',
+        canActivate: [roleGuard('staff')],
+        loadComponent: () => import('./pages/staff-reviews.page').then((m) => m.StaffReviewsPage),
+      },
+
       { path: 'account', loadComponent: () => import('./pages/home.page').then((m) => m.HomePage) },
     ],
   },

@@ -1,8 +1,8 @@
 <?php
-// reviews.php: faculty rate the staff member after a request is completed (Step 6).
-// Faculty only. Action: create (POST).
+// reviews.php: ratings for finished jobs.
+// Step 6: create (POST), faculty only. Rate the staff member after a request is completed.
+// Step 7: for_staff (GET), staff only. The reviews written about the logged-in staff member.
 // Reviews are final: there is no update and no delete.
-// The staff view of reviews (for_staff) is added in Step 7.
 require 'config.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -93,8 +93,47 @@ if ($method === 'POST' && $action === 'create') {
     sendResponse(['review' => ['id' => $newId, 'request_id' => $requestId, 'rating' => $ratingInt]], 201);
 }
 
+// ---------- GET for_staff: reviews about me (staff only) ----------
+if ($method === 'GET' && $action === 'for_staff') {
+    $user = requireUser($conn, ['staff']);
+
+    // staff_id comes from the logged-in user, never from the URL,
+    // so one staff member cannot read another's reviews.
+    $stmt = $conn->prepare(<<<'SQL'
+        SELECT rv.id,
+               rv.request_id,
+               rv.rating,
+               rv.comment,
+               r.title,
+               l.name AS location_name,
+               f.name AS reviewer_name,
+               to_char(rv.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+        FROM reviews rv
+        JOIN requests r  ON r.id = rv.request_id
+        JOIN locations l ON l.id = r.location_id
+        JOIN users f     ON f.id = rv.created_by
+        WHERE rv.staff_id = ?
+        ORDER BY rv.created_at DESC, rv.id DESC
+    SQL);
+    $stmt->execute([$user['id']]);
+    $reviews = $stmt->fetchAll();
+
+    // Plain count and average of the ratings above. No charts, no targets.
+    $sum = $conn->prepare('SELECT COUNT(*) AS total, AVG(rating) AS average FROM reviews WHERE staff_id = ?');
+    $sum->execute([$user['id']]);
+    $row = $sum->fetch();
+
+    sendResponse([
+        'reviews' => $reviews,
+        'summary' => [
+            'count'   => (int) $row['total'],
+            'average' => $row['average'] === null ? null : round((float) $row['average'], 1),
+        ],
+    ], 200);
+}
+
 // A known action sent with the wrong HTTP method gets 405. Anything else is unknown.
-if ($action === 'create') {
+if (in_array($action, ['create', 'for_staff'], true)) {
     sendResponse(['error' => 'Method not allowed'], 405);
 }
 sendResponse(['error' => 'Invalid action'], 400);

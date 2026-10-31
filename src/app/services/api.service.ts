@@ -13,6 +13,7 @@ import {
   RequestSummary,
   StaffJob,
   StaffMember,
+  StaffReviewList,
   SubmitProofPayload,
 } from '../models/request.model';
 
@@ -214,6 +215,20 @@ export class ApiService {
       await firstValueFrom(this.http.post(`${API_BASE}/reviews.php?action=create`, payload));
     } catch (e: any) {
       throw new Error(e.error?.error ?? 'Could not save your rating');
+    }
+  }
+
+  // ===== STAFF REVIEWS (Step 7) =====
+  // Staff only. The server returns only the reviews about the logged-in staff member.
+  async getStaffReviews(): Promise<StaffReviewList> {
+    try {
+      const response: any = await firstValueFrom(this.http.get(`${API_BASE}/reviews.php?action=for_staff`));
+      return {
+        reviews: response.reviews ?? [],
+        summary: response.summary ?? { count: 0, average: null },
+      };
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to load your reviews');
     }
   }
 }
