@@ -4,7 +4,9 @@ require 'config.php';
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 
-// Columns for faculty lists (Step 3). Photos are left out on purpose.
+// Columns for faculty lists (Step 3, extended in Step 6 with the review flag). Photos are left out on purpose.
+// Why staff_name only when completed: a cancelled request keeps assigned_to for history,
+// and showing that name to faculty would be misleading.
 $requestColumns = <<<SQL
     r.id,
     r.title,
@@ -12,6 +14,9 @@ $requestColumns = <<<SQL
     r.status,
     c.name AS category_name,
     l.name AS location_name,
+    CASE WHEN r.status = 'completed' THEN s.name END AS staff_name,
+    (rv.id IS NOT NULL) AS has_review,
+    rv.rating AS review_rating,
     to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
     to_char(r.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
 SQL;
@@ -144,6 +149,8 @@ if ($method === 'GET' && $action === 'mine') {
          FROM requests r
          JOIN categories c ON c.id = r.category_id
          JOIN locations  l ON l.id = r.location_id
+         LEFT JOIN users   s  ON s.id = r.assigned_to
+         LEFT JOIN reviews rv ON rv.request_id = r.id
          WHERE r.created_by = ?
          ORDER BY r.created_at DESC'
     );
@@ -157,10 +164,12 @@ if ($method === 'GET' && $action === 'queue') {
     requireUser($conn, ['admin']);
 
     // submitted = needs a department and staff. assigned = can still be reassigned or cancelled.
+    // awaiting_proof (Step 6) = staff sent proof, the admin must review it and mark completed.
+    // Proof requests are listed first because someone is waiting on them.
     $stmt = $conn->prepare(
         "SELECT $adminColumns $adminFrom
-         WHERE r.status IN ('submitted', 'assigned')
-         ORDER BY r.created_at DESC"
+         WHERE r.status IN ('submitted', 'assigned', 'awaiting_proof')
+         ORDER BY (r.status = 'awaiting_proof') DESC, r.created_at DESC"
     );
     $stmt->execute();
 
@@ -342,8 +351,57 @@ if ($method === 'POST' && $action === 'cancel') {
     sendResponse(['request' => loadAdminRequest($conn, $requestId, $adminColumns, $adminFrom)], 200);
 }
 
+// ---------- POST complete: awaiting_proof -> completed (admin only) ----------
+if ($method === 'POST' && $action === 'complete') {
+    $admin = requireUser($conn, ['admin']);
+    $data  = getJsonBody();
+
+    $requestId = $data['request_id'] ?? null;
+    $remark    = trim((string) ($data['remark'] ?? ''));
+
+    if (!is_numeric($requestId)) {
+        sendResponse(['error' => 'A request id is required'], 400);
+    }
+    if (mb_strlen($remark) > 300) {
+        sendResponse(['error' => 'Remark must be 300 characters or less'], 400);
+    }
+    $requestId = (int) $requestId;
+
+    $conn->beginTransaction();
+    try {
+        // Lock the row so a double tap or a second admin cannot complete it twice.
+        $cur = $conn->prepare('SELECT status FROM requests WHERE id = ? FOR UPDATE');
+        $cur->execute([$requestId]);
+        $current = $cur->fetch();
+        if (!$current) {
+            failAndRollBack($conn, 404, 'Request not found');
+        }
+        // Only proof that was sent can be approved.
+        if ($current['status'] !== 'awaiting_proof') {
+            failAndRollBack($conn, 409, 'Only a request that is awaiting proof can be completed');
+        }
+
+        // Leaving the active statuses frees the staff member through the one-job index.
+        $update = $conn->prepare("UPDATE requests SET status = 'completed', updated_at = now() WHERE id = ?");
+        $update->execute([$requestId]);
+
+        $event = $conn->prepare(
+            'INSERT INTO request_events (request_id, status, remark, changed_by)
+             VALUES (?, ?, ?, ?)'
+        );
+        $event->execute([$requestId, 'completed', $remark !== '' ? $remark : 'Proof approved, marked completed', $admin['id']]);
+
+        $conn->commit();
+    } catch (PDOException $e) {
+        error_log('Complete failed: ' . $e->getMessage());
+        failAndRollBack($conn, 500, 'Could not complete the request');
+    }
+
+    sendResponse(['request' => loadAdminRequest($conn, $requestId, $adminColumns, $adminFrom)], 200);
+}
+
 // A known action sent with the wrong HTTP method gets 405. Anything else is unknown.
-$knownActions = ['create', 'mine', 'queue', 'detail', 'assign', 'cancel'];
+$knownActions = ['create', 'mine', 'queue', 'detail', 'assign', 'cancel', 'complete'];
 if (in_array($action, $knownActions, true)) {
     sendResponse(['error' => 'Method not allowed'], 405);
 }

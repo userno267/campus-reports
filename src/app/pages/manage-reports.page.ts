@@ -39,7 +39,7 @@ interface AssignForm {
 }
 
 // Admin "Manage" tab. Two views on one page:
-//  1. the queue (submitted and assigned requests)
+//  1. the queue (submitted, assigned, and awaiting-proof requests)
 //  2. the detail view for one request: photo, timeline, department, staff, actions
 // Why no separate detail page: fewer routes, and the queue stays loaded when you go back.
 @Component({
@@ -113,6 +113,40 @@ interface AssignForm {
         <img class="before-photo"
              [src]="'data:image/jpeg;base64,' + selected.before_photo"
              alt="Before photo" />
+
+        <!-- Step 6: proof from the staff member. Shown once an after photo exists. -->
+        @if (selected.after_photo) {
+          <div class="detail-card ion-margin-top">
+            <h3 class="detail-title">Proof from staff</h3>
+            @if (selected.assigned_name) {
+              <p class="meta">Sent by {{ selected.assigned_name }}</p>
+            }
+            @if (selected.proof_note) {
+              <p class="detail-text">{{ selected.proof_note }}</p>
+            } @else {
+              <p class="meta">No note.</p>
+            }
+          </div>
+          <img class="before-photo"
+               [src]="'data:image/jpeg;base64,' + selected.after_photo"
+               alt="After photo" />
+        }
+
+        <!-- Step 6: approve the proof. Assign and cancel are hidden for this status. -->
+        @if (canComplete) {
+          <ion-list class="card-list ion-margin-top">
+            <ion-item>
+              <ion-textarea label="Remark (optional)" labelPlacement="stacked" [autoGrow]="true"
+                            maxlength="300" placeholder="For example: checked, looks good"
+                            [(ngModel)]="form.remark"></ion-textarea>
+            </ion-item>
+          </ion-list>
+
+          <ion-button expand="block" class="action-btn ion-margin-top"
+                      [disabled]="busy" (click)="confirmComplete()">
+            {{ busy ? 'Saving...' : 'Mark completed' }}
+          </ion-button>
+        }
 
         <!-- Assignment form. Only while the request is still submitted or assigned. -->
         @if (canChange) {
@@ -419,6 +453,44 @@ export class ManageReportsPage implements OnInit {
       this.busy = false;
       this.cdr.markForCheck();
     }
+  }
+
+  // Ask first: completing cannot be undone, and faculty can rate right after.
+  async confirmComplete() {
+    if (!this.selected) return;
+    const requestId = this.selected.id;
+
+    const alert = await this.alertCtrl.create({
+      header: 'Mark as completed?',
+      message: 'Only do this after you checked the after photo. This cannot be undone.',
+      buttons: [
+        { text: 'Not yet', role: 'cancel' },
+        { text: 'Yes, completed', handler: () => this.doComplete(requestId) },
+      ],
+    });
+    await alert.present();
+  }
+
+  private async doComplete(requestId: number) {
+    this.busy = true;
+    this.cdr.markForCheck();
+    try {
+      await this.adminService.complete(requestId, this.form.remark.trim());
+      await this.feedback.toast('Request completed.', 'success');
+      this.selected = null;
+      await this.loadQueue();
+    } catch (e: any) {
+      // Stay on the detail view. Another admin may have completed it already.
+      await this.feedback.toast(e.message ?? 'Could not complete the request.');
+    } finally {
+      this.busy = false;
+      this.cdr.markForCheck();
+    }
+  }
+
+  // Step 6: the Mark completed button is only shown when proof is waiting.
+  get canComplete(): boolean {
+    return this.selected?.status === 'awaiting_proof';
   }
 
   // The assign form is only shown while the request is still open.

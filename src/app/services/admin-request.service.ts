@@ -61,4 +61,10 @@ export class AdminRequestService {
     this.requireAdmin();
     await this.api.cancelRequest({ request_id: requestId, remark });
   }
+
+  // Step 6: approve the staff proof. The server only allows this from awaiting_proof.
+  async complete(requestId: number, remark: string = ''): Promise<void> {
+    this.requireAdmin();
+    await this.api.completeRequest(requestId, remark);
+  }
 }

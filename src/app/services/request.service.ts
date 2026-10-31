@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import {
   CampusLocation,
   CreateRequestPayload,
+  CreateReviewPayload,
   RequestCategory,
   RequestSummary,
 } from '../models/request.model';
@@ -59,5 +60,22 @@ export class RequestService {
   async getMyRequests(): Promise<RequestSummary[]> {
     if (!this.auth.user()) throw new Error('Please log in again.');
     return this.api.getMyRequests();
+  }
+
+  // Step 6: rate the staff member after the request is completed. Reviews are final.
+  // Checks here give quick feedback only. The server checks again.
+  async submitReview(requestId: number, rating: number | null, comment: string): Promise<void> {
+    if (!this.auth.user()) throw new Error('Please log in again.');
+    if (rating === null || rating < 1 || rating > 5) throw new Error('Please choose a rating from 1 to 5.');
+
+    const trimmed = comment.trim();
+    if (trimmed.length > 300) throw new Error('Comment must be 300 characters or less.');
+
+    const payload: CreateReviewPayload = {
+      request_id: requestId,
+      rating,
+      comment: trimmed === '' ? null : trimmed,
+    };
+    await this.api.createReview(payload);
   }
 }

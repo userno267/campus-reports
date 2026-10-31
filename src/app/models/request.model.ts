@@ -31,6 +31,9 @@ export interface RequestSummary {
   category_name: string;
   location_name: string;
   status: RequestStatus;
+  staff_name: string | null;            // Step 6: only set when the request is completed
+  has_review: boolean;                  // Step 6: true once the faculty member has rated it
+  review_rating: number | null;         // Step 6: 1 to 5, or null when not rated
   created_at: string;
   updated_at: string;
 }
@@ -74,8 +77,8 @@ export interface RequestEvent {
 // The detail view: the queue row plus both photos, the proof note, and the timeline.
 export interface AdminRequestDetail extends AdminRequestRow {
   before_photo: string;                 // raw base64
-  after_photo: string | null;           // filled in Step 5
-  proof_note: string | null;            // filled in Step 5
+  after_photo: string | null;           // set when staff send proof (Step 5)
+  proof_note: string | null;            // set when staff send proof (Step 5)
   events: RequestEvent[];
 }
 
@@ -126,4 +129,13 @@ export interface SubmitProofPayload {
   request_id: number;
   after_photo: string;
   proof_note: string | null;
+}
+
+// ===== REVIEWS (Step 6) =====
+
+// What the rating call sends. comment is null when the faculty member leaves it empty.
+export interface CreateReviewPayload {
+  request_id: number;
+  rating: number;                       // 1 to 5
+  comment: string | null;
 }

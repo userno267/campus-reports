@@ -9,6 +9,7 @@ import {
   CampusLocation,
   CancelRequestPayload,
   CreateRequestPayload,
+  CreateReviewPayload,
   RequestSummary,
   StaffJob,
   StaffMember,
@@ -148,6 +149,18 @@ export class ApiService {
     }
   }
 
+  // Step 6: admin approves the proof. The server only allows this from awaiting_proof.
+  async completeRequest(requestId: number, remark: string): Promise<AdminRequestRow> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/reports.php?action=complete`, { request_id: requestId, remark })
+      );
+      return response.request;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Could not complete the request');
+    }
+  }
+
   // Staff list. Pass a department id to filter, or null for everyone.
   async getStaff(departmentId: number | null = null): Promise<StaffMember[]> {
     try {
@@ -191,6 +204,16 @@ export class ApiService {
       return response.job;
     } catch (e: any) {
       throw new Error(e.error?.error ?? 'Could not send the proof');
+    }
+  }
+
+  // ===== REVIEWS (Step 6) =====
+  // Faculty only. The server checks the owner, the status, and that it is the first review.
+  async createReview(payload: CreateReviewPayload): Promise<void> {
+    try {
+      await firstValueFrom(this.http.post(`${API_BASE}/reviews.php?action=create`, payload));
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Could not save your rating');
     }
   }
 }
