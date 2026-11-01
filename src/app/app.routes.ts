@@ -2,8 +2,6 @@ import { Routes } from '@angular/router';
 import { authGuard } from './guards/auth.guard';
 import { landingGuard, roleGuard } from './guards/role.guard';
 
-const placeholder = () => import('./pages/placeholder.page').then((m) => m.PlaceholderPage);
-
 export const routes: Routes = [
   {
     path: 'login',
@@ -23,7 +21,12 @@ export const routes: Routes = [
     children: [
       { path: '', pathMatch: 'full', canActivate: [landingGuard], children: [] },
 
-      { path: 'faculty-home', canActivate: [roleGuard('faculty')], data: { title: 'Home' }, loadComponent: placeholder },
+      // Step 9: real faculty home (welcome text and two shortcuts, no data loaded).
+      {
+        path: 'faculty-home',
+        canActivate: [roleGuard('faculty')],
+        loadComponent: () => import('./pages/faculty-home.page').then((m) => m.FacultyHomePage),
+      },
       {
         path: 'new-report',
         canActivate: [roleGuard('faculty')],
@@ -46,9 +49,9 @@ export const routes: Routes = [
         canActivate: [roleGuard('admin')],
         loadComponent: () => import('./pages/manage-reports.page').then((m) => m.ManageReportsPage),
       },
-      { path: 'control-center', canActivate: [roleGuard('admin')], data: { title: 'Control Center' }, loadComponent: placeholder },
+      // Step 9: the Control tab is removed (no route for it any more).
 
-      // Step 5: the real staff job screen replaces the placeholder.
+      // Step 5: the real staff job screen.
       {
         path: 'assigned',
         canActivate: [roleGuard('staff')],

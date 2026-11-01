@@ -69,11 +69,11 @@ if ($method === 'POST' && $action === 'create') {
     $user = requireUser($conn, ['faculty']);
     $data = getJsonBody();
 
-    $title       = trim((string) ($data['title'] ?? ''));
-    $description = trim((string) ($data['description'] ?? ''));
-    $categoryId  = $data['category_id'] ?? null;
-    $locationId  = $data['location_id'] ?? null;
-    $photo       = (string) ($data['before_photo'] ?? '');
+    $title       = textField($data, 'title');
+    $description = textField($data, 'description');
+    $categoryId  = positiveInt($data['category_id'] ?? null, 'Choose a category and a location');
+    $locationId  = positiveInt($data['location_id'] ?? null, 'Choose a category and a location');
+    $photo       = textField($data, 'before_photo', false);
 
     // Server-side checks. The browser checks too, but the server never trusts the browser.
     if (mb_strlen($title) < 3 || mb_strlen($title) > 80) {
@@ -81,9 +81,6 @@ if ($method === 'POST' && $action === 'create') {
     }
     if ($description === '' || mb_strlen($description) > 500) {
         sendResponse(['error' => 'Description is required (max 500 characters)'], 400);
-    }
-    if (!is_numeric($categoryId) || !is_numeric($locationId)) {
-        sendResponse(['error' => 'Choose a category and a location'], 400);
     }
     if ($photo === '') {
         sendResponse(['error' => 'A before photo is required'], 400);
@@ -98,13 +95,13 @@ if ($method === 'POST' && $action === 'create') {
 
     // Make sure the category and location really exist.
     $catCheck = $conn->prepare('SELECT 1 FROM categories WHERE id = ?');
-    $catCheck->execute([(int) $categoryId]);
+    $catCheck->execute([$categoryId]);
     if ($catCheck->fetchColumn() === false) {
         sendResponse(['error' => 'Category not found'], 400);
     }
 
     $locCheck = $conn->prepare('SELECT 1 FROM locations WHERE id = ?');
-    $locCheck->execute([(int) $locationId]);
+    $locCheck->execute([$locationId]);
     if ($locCheck->fetchColumn() === false) {
         sendResponse(['error' => 'Location not found'], 400);
     }
@@ -118,7 +115,7 @@ if ($method === 'POST' && $action === 'create') {
              RETURNING id'
         );
         $insert->execute([
-            $title, $description, (int) $categoryId, (int) $locationId,
+            $title, $description, $categoryId, $locationId,
             $photo, 'submitted', $user['id'],
         ]);
         $newId = (int) $insert->fetchColumn();
@@ -164,7 +161,7 @@ if ($method === 'GET' && $action === 'queue') {
     requireUser($conn, ['admin']);
 
     // submitted = needs a department and staff. assigned = can still be reassigned or cancelled.
-    // awaiting_proof (Step 6) = staff sent proof, the admin must review it and mark completed.
+    // awaiting_proof = staff sent proof, the admin must review it and mark completed.
     // Proof requests are listed first because someone is waiting on them.
     $stmt = $conn->prepare(
         "SELECT $adminColumns $adminFrom
@@ -207,17 +204,14 @@ if ($method === 'GET' && $action === 'all') {
 if ($method === 'GET' && $action === 'detail') {
     requireUser($conn, ['admin']);
 
-    $id = $_GET['id'] ?? '';
-    if (!ctype_digit((string) $id)) {
-        sendResponse(['error' => 'A request id is required'], 400);
-    }
+    $id = positiveInt($_GET['id'] ?? null, 'A request id is required');
 
     // The detail view also needs both photos and the proof note.
     $stmt = $conn->prepare(
         "SELECT $adminColumns, r.before_photo, r.after_photo, r.proof_note $adminFrom
          WHERE r.id = ?"
     );
-    $stmt->execute([(int) $id]);
+    $stmt->execute([$id]);
     $request = $stmt->fetch();
     if (!$request) {
         sendResponse(['error' => 'Request not found'], 404);
@@ -234,10 +228,10 @@ if ($method === 'GET' && $action === 'detail') {
         WHERE e.request_id = ?
         ORDER BY e.changed_at, e.id
     SQL);
-    $events->execute([(int) $id]);
+    $events->execute([$id]);
     $request['events'] = $events->fetchAll();
 
-    // Step 8: the faculty rating for this request, or null when it has not been rated.
+    // The faculty rating for this request, or null when it has not been rated.
     // The UNIQUE request_id means there is at most one row.
     $reviewStmt = $conn->prepare(<<<'SQL'
         SELECT rv.rating,
@@ -248,7 +242,7 @@ if ($method === 'GET' && $action === 'detail') {
         JOIN users f ON f.id = rv.created_by
         WHERE rv.request_id = ?
     SQL);
-    $reviewStmt->execute([(int) $id]);
+    $reviewStmt->execute([$id]);
     $review = $reviewStmt->fetch();           // false when there is no row
     $request['review'] = $review ?: null;
 
@@ -260,20 +254,14 @@ if ($method === 'POST' && $action === 'assign') {
     $admin = requireUser($conn, ['admin']);
     $data  = getJsonBody();
 
-    $requestId    = $data['request_id'] ?? null;
-    $departmentId = $data['department_id'] ?? null;
-    $staffId      = $data['staff_id'] ?? null;
-    $remark       = trim((string) ($data['remark'] ?? ''));
+    $requestId    = positiveInt($data['request_id'] ?? null, 'A request id is required');
+    $departmentId = positiveInt($data['department_id'] ?? null, 'Choose a department and a staff member');
+    $staffId      = positiveInt($data['staff_id'] ?? null, 'Choose a department and a staff member');
+    $remark       = textField($data, 'remark');
 
-    if (!is_numeric($requestId) || !is_numeric($departmentId) || !is_numeric($staffId)) {
-        sendResponse(['error' => 'Choose a department and a staff member'], 400);
-    }
     if (mb_strlen($remark) > 300) {
         sendResponse(['error' => 'Remark must be 300 characters or less'], 400);
     }
-    $requestId    = (int) $requestId;
-    $departmentId = (int) $departmentId;
-    $staffId      = (int) $staffId;
 
     $conn->beginTransaction();
     try {
@@ -350,16 +338,12 @@ if ($method === 'POST' && $action === 'cancel') {
     $admin = requireUser($conn, ['admin']);
     $data  = getJsonBody();
 
-    $requestId = $data['request_id'] ?? null;
-    $remark    = trim((string) ($data['remark'] ?? ''));
+    $requestId = positiveInt($data['request_id'] ?? null, 'A request id is required');
+    $remark    = textField($data, 'remark');
 
-    if (!is_numeric($requestId)) {
-        sendResponse(['error' => 'A request id is required'], 400);
-    }
     if (mb_strlen($remark) > 300) {
         sendResponse(['error' => 'Remark must be 300 characters or less'], 400);
     }
-    $requestId = (int) $requestId;
 
     $conn->beginTransaction();
     try {
@@ -398,16 +382,12 @@ if ($method === 'POST' && $action === 'complete') {
     $admin = requireUser($conn, ['admin']);
     $data  = getJsonBody();
 
-    $requestId = $data['request_id'] ?? null;
-    $remark    = trim((string) ($data['remark'] ?? ''));
+    $requestId = positiveInt($data['request_id'] ?? null, 'A request id is required');
+    $remark    = textField($data, 'remark');
 
-    if (!is_numeric($requestId)) {
-        sendResponse(['error' => 'A request id is required'], 400);
-    }
     if (mb_strlen($remark) > 300) {
         sendResponse(['error' => 'Remark must be 300 characters or less'], 400);
     }
-    $requestId = (int) $requestId;
 
     $conn->beginTransaction();
     try {

@@ -21,11 +21,16 @@ function fetchPublicUser(PDO $conn, int $id): array {
 if ($method === 'POST' && $action === 'login') {
     $data = getJsonBody();
     // Lowercase the email so it matches how accounts are stored.
-    $email = strtolower(trim($data['email'] ?? ''));
-    $password = (string) ($data['password'] ?? '');
+    $email    = strtolower(textField($data, 'email'));
+    $password = textField($data, 'password', false);
 
     if ($email === '' || $password === '') {
         sendResponse(['error' => 'Email and password required'], 400);
+    }
+    // bcrypt only uses the first 72 bytes, and register refuses longer passwords,
+    // so a longer one can never match. Answer the same way as a wrong password.
+    if (strlen($password) > 72 || strlen($email) > 255) {
+        sendResponse(['error' => 'Invalid email or password'], 401);
     }
 
     // This is the only place the hash is read. It stays inside PHP.
@@ -43,22 +48,33 @@ if ($method === 'POST' && $action === 'login') {
 
 // ---------- REGISTER (faculty or staff only; admin accounts are seeded) ----------
 if ($method === 'POST' && $action === 'register') {
-    $data = getJsonBody();
-    $name       = trim($data['name'] ?? '');
-    $email      = strtolower(trim($data['email'] ?? ''));
-    $employeeId = trim($data['employee_id'] ?? '');
-    $password   = (string) ($data['password'] ?? '');
+    $data       = getJsonBody();
+    $name       = textField($data, 'name');
+    $email      = strtolower(textField($data, 'email'));
+    $employeeId = textField($data, 'employee_id');
+    $password   = textField($data, 'password', false);
     $role       = $data['role'] ?? '';
     $deptId     = $data['department_id'] ?? null;
 
     if ($name === '' || $email === '' || $employeeId === '' || $password === '') {
         sendResponse(['error' => 'Name, email, employee ID and password are required'], 400);
     }
-    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    // Lengths match the database columns, so a long value is a clear 400, not a 500.
+    if (mb_strlen($name) > 255) {
+        sendResponse(['error' => 'Name must be 255 characters or less'], 400);
+    }
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($email) > 255) {
         sendResponse(['error' => 'Please enter a valid email'], 400);
+    }
+    if (mb_strlen($employeeId) > 50) {
+        sendResponse(['error' => 'Employee ID must be 50 characters or less'], 400);
     }
     if (strlen($password) < 6) {
         sendResponse(['error' => 'Password must be at least 6 characters'], 400);
+    }
+    // bcrypt ignores everything after 72 bytes, so refuse rather than truncate silently.
+    if (strlen($password) > 72) {
+        sendResponse(['error' => 'Password is too long (maximum 72 bytes)'], 400);
     }
     // Admin is deliberately NOT allowed here, even if someone edits the request by hand.
     if (!in_array($role, ['faculty', 'staff'], true)) {
@@ -66,10 +82,7 @@ if ($method === 'POST' && $action === 'register') {
     }
 
     if ($role === 'staff') {
-        if (!is_numeric($deptId)) {
-            sendResponse(['error' => 'Staff must choose a department'], 400);
-        }
-        $deptId = (int) $deptId;
+        $deptId = positiveInt($deptId, 'Staff must choose a department');
         $check = $conn->prepare('SELECT 1 FROM departments WHERE id = ?');
         $check->execute([$deptId]);
         if ($check->fetchColumn() === false) {
@@ -111,5 +124,9 @@ if ($method === 'GET' && $action === 'me') {
     sendResponse(['user' => fetchPublicUser($conn, (int) $user['id'])], 200);
 }
 
+// A known action sent with the wrong HTTP method gets 405. Anything else is unknown.
+if (in_array($action, ['login', 'register', 'me'], true)) {
+    sendResponse(['error' => 'Method not allowed'], 405);
+}
 sendResponse(['error' => 'Invalid action'], 400);
 ?>

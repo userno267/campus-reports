@@ -14,11 +14,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 $params = [];
 $where  = "WHERE u.role = 'staff'";
 if (isset($_GET['department_id']) && $_GET['department_id'] !== '') {
-    if (!ctype_digit((string) $_GET['department_id'])) {
-        sendResponse(['error' => 'department_id must be a number'], 400);
-    }
+    $params[] = positiveInt($_GET['department_id'], 'department_id must be a number');
     $where   .= ' AND u.department_id = ?';
-    $params[] = (int) $_GET['department_id'];
 }
 
 // Find an active request for each staff member. The status list matches the

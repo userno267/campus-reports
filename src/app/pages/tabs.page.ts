@@ -7,7 +7,6 @@ import {
   documentsOutline,
   personCircleOutline,
   listOutline,
-  settingsOutline,
   clipboardOutline,
   peopleOutline,
   starOutline,
@@ -58,11 +57,6 @@ import { AuthService } from '../services/auth.service';
             <ion-tab-button tab="manage-reports">
               <ion-icon name="clipboard-outline"></ion-icon>
               <ion-label>Manage</ion-label>
-            </ion-tab-button>
-
-            <ion-tab-button tab="control-center">
-              <ion-icon name="settings-outline"></ion-icon>
-              <ion-label>Control</ion-label>
             </ion-tab-button>
 
             <ion-tab-button tab="account">
@@ -146,7 +140,7 @@ import { AuthService } from '../services/auth.service';
       color: #29483d;
     }
 
-    /* Narrow phones: shrink the labels and icons so five tabs still fit */
+    /* Narrow phones: shrink the labels and icons so the tabs still fit */
     @media (max-width: 360px) {
       .custom-tab-bar {
         padding-left: 2px;
@@ -179,7 +173,6 @@ export class TabsPage {
       documentsOutline,
       personCircleOutline,
       listOutline,
-      settingsOutline,
       clipboardOutline,
       peopleOutline,
       starOutline,

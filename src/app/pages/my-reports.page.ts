@@ -46,7 +46,7 @@ const RATING_CHOICES = [
   imports: [
     CommonModule, DatePipe, FormsModule,
     IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonItem,
-    IonLabel, IonList, IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
+    IonLabel, IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `

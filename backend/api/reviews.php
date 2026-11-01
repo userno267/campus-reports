@@ -21,13 +21,10 @@ if ($method === 'POST' && $action === 'create') {
     $user = requireUser($conn, ['faculty']);
     $data = getJsonBody();
 
-    $requestId = $data['request_id'] ?? null;
+    $requestId = positiveInt($data['request_id'] ?? null, 'A request id is required');
     $rating    = $data['rating'] ?? null;
-    $comment   = trim((string) ($data['comment'] ?? ''));
+    $comment   = textField($data, 'comment');
 
-    if (!is_numeric($requestId)) {
-        sendResponse(['error' => 'A request id is required'], 400);
-    }
     // FILTER_VALIDATE_INT rejects 3.5 and "abc"; the range check keeps it to 1..5.
     $ratingInt = filter_var($rating, FILTER_VALIDATE_INT);
     if ($ratingInt === false || $ratingInt < 1 || $ratingInt > 5) {
@@ -36,7 +33,6 @@ if ($method === 'POST' && $action === 'create') {
     if (mb_strlen($comment) > 300) {
         sendResponse(['error' => 'Comment must be 300 characters or less'], 400);
     }
-    $requestId = (int) $requestId;
 
     $conn->beginTransaction();
     try {

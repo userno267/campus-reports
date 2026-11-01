@@ -16,6 +16,15 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 
+// Safety net: any error we did not expect still returns JSON, never an empty page.
+// The real message goes to the log only, never to the client.
+set_exception_handler(function (Throwable $e) {
+    error_log('Unhandled error: ' . $e->getMessage());
+    http_response_code(500);
+    echo json_encode(['error' => 'Something went wrong. Please try again.']);
+    exit;
+});
+
 // ---------- Database configuration (PostgreSQL) ----------
 define('DB_HOST', 'db');        // the service name in docker-compose.yaml
 define('DB_PORT', '5432');
@@ -49,8 +58,10 @@ for ($i = 0; $i < $maxRetries; $i++) {
 }
 
 if ($conn === null) {
+    // Log the real reason. The client gets a generic message only.
+    error_log('Database connection failed: ' . $lastError);
     http_response_code(500);
-    die(json_encode(['error' => 'Database connection failed: ' . $lastError]));
+    die(json_encode(['error' => 'The database is unavailable. Please try again shortly.']));
 }
 
 // Make sure this session also uses UTC (timestamps are ISO strings in UTC).
@@ -78,20 +89,45 @@ function getJsonBody(): array {
     return $data;
 }
 
+// Read a text field from the JSON body. Missing or null gives ''.
+// A value that is not text (an array, a number, true) is a 400, not a crash.
+// Pass $trim = false for passwords and base64 photos, which must stay exact.
+function textField(array $data, string $key, bool $trim = true): string {
+    $value = $data[$key] ?? '';
+    if (!is_string($value)) {
+        sendResponse(['error' => "$key must be text"], 400);
+    }
+    return $trim ? trim($value) : $value;
+}
+
+// Turn a value into a positive whole number that fits an integer column.
+// Letters, 1.5, 1e3, arrays, zero and huge numbers are all a 400 with $message.
+function positiveInt($value, string $message): int {
+    $n = filter_var($value, FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 1, 'max_range' => 2147483647],
+    ]);
+    if ($n === false) {
+        sendResponse(['error' => $message], 400);
+    }
+    return $n;
+}
+
 // Load the logged-in user from the X-User-Id header and check their role.
 // Usage: $user = requireUser($conn, ['admin']);   (empty list = any logged-in user)
 // NOTE: a real system would use signed tokens (JWT or sessions). The header is
 // easy to fake, which is acceptable for this school demo only.
 function requireUser(PDO $conn, array $allowedRoles = []): array {
-    $id = $_SERVER['HTTP_X_USER_ID'] ?? '';
-    if (!ctype_digit($id)) {
+    $userId = filter_var($_SERVER['HTTP_X_USER_ID'] ?? '', FILTER_VALIDATE_INT, [
+        'options' => ['min_range' => 1, 'max_range' => 2147483647],
+    ]);
+    if ($userId === false) {
         sendResponse(['error' => 'Not logged in'], 401);
     }
 
     $stmt = $conn->prepare(
         'SELECT id, name, email, role, employee_id, department_id FROM users WHERE id = ?'
     );
-    $stmt->execute([(int) $id]);
+    $stmt->execute([$userId]);
     $user = $stmt->fetch();   // false when no row matches
 
     if (!$user) {

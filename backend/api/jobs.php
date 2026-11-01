@@ -44,13 +44,9 @@ function loadJob(PDO $conn, int $id, string $columns, string $from): ?array {
     return $row ?: null;
 }
 
-// Read the request id from the body. Stops with 400 when it is missing.
+// Read the request id from the body. Stops with 400 when it is missing or not a whole number.
 function requireRequestId(array $data): int {
-    $id = $data['request_id'] ?? null;
-    if (!is_numeric($id)) {
-        sendResponse(['error' => 'A request id is required'], 400);
-    }
-    return (int) $id;
+    return positiveInt($data['request_id'] ?? null, 'A request id is required');
 }
 
 // Lock the request row and check it is this staff member's job.
@@ -87,6 +83,7 @@ if ($method === 'GET' && $action === 'current') {
 }
 
 // ---------- POST start: assigned -> in_progress ----------
+// Note: start does not change assigned_to, so it cannot hit the one-job index (no 23505 branch needed).
 if ($method === 'POST' && $action === 'start') {
     $user      = requireUser($conn, ['staff']);
     $requestId = requireRequestId(getJsonBody());
@@ -127,8 +124,8 @@ if ($method === 'POST' && $action === 'proof') {
     $user      = requireUser($conn, ['staff']);
     $data      = getJsonBody();
     $requestId = requireRequestId($data);
-    $photo     = (string) ($data['after_photo'] ?? '');
-    $note      = trim((string) ($data['proof_note'] ?? ''));
+    $photo     = textField($data, 'after_photo', false);
+    $note      = textField($data, 'proof_note');
 
     // Same photo rules as the before photo: raw base64, size limit.
     if ($photo === '') {
