@@ -12,6 +12,7 @@ import {
 } from '../models/request.model';
 import { Department } from '../models/user.model';
 import { PriorityBadgeComponent } from '../components/priority-badge.component';
+import { LocationMapComponent } from '../components/location-map.component';
 import { PRIORITY_CHOICES } from '../utils/priority.util';
 
 // Friendly labels and badge colours for each status (same as My Reports).
@@ -43,7 +44,7 @@ interface AssignForm {
 
 // Admin "Manage" tab. Two views on one page:
 //  1. the queue (submitted, assigned, and awaiting-proof requests)
-//  2. the detail view for one request: photo, timeline, department, staff, actions
+//  2. the detail view for one request: photo, map, timeline, department, staff, actions
 // Why no separate detail page: fewer routes, and the queue stays loaded when you go back.
 @Component({
   selector: 'app-manage-reports',
@@ -52,7 +53,7 @@ interface AssignForm {
     DatePipe, FormsModule,
     IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonItem, IonLabel,
     IonList, IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
-    PriorityBadgeComponent,
+    PriorityBadgeComponent, LocationMapComponent,
   ],
   template: `
     <ion-header class="ion-no-border">
@@ -123,6 +124,12 @@ interface AssignForm {
         <img class="before-photo"
              [src]="'data:image/jpeg;base64,' + selected.before_photo"
              alt="Before photo" />
+
+        <!-- Where the problem is. Free map (C3). Staff positions are never shown here. -->
+        <div class="detail-card ion-margin-top">
+          <h3 class="detail-title">Problem location</h3>
+          <app-location-map [problemLat]="selected.latitude" [problemLng]="selected.longitude" />
+        </div>
 
         <!-- Step 6: proof from the staff member. Shown once an after photo exists. -->
         @if (selected.after_photo) {
@@ -532,6 +539,7 @@ export class ManageReportsPage implements OnInit {
       this.cdr.markForCheck();
     }
   }
+
   // Send the proof back. The reason is required so the staff member knows what to fix.
   async confirmSendBack() {
     if (!this.selected) return;
@@ -570,6 +578,7 @@ export class ManageReportsPage implements OnInit {
       this.cdr.markForCheck();
     }
   }
+
   // Step 6: the Mark completed button is only shown when proof is waiting.
   get canComplete(): boolean {
     return this.selected?.status === 'awaiting_proof';

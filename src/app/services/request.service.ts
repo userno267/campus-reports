@@ -11,12 +11,16 @@ import {
 } from '../models/request.model';
 
 // What the New Report form gives us. Nullable because the form starts empty.
+// Feature 4: the GPS fix and photo time are null when the device could not provide them.
 export interface NewRequestForm {
   title: string;
   category_id: number | null;
   location_id: number | null;
   description: string;
   before_photo: string | null;   // raw base64 from photo.util.ts
+  latitude: number | null;
+  longitude: number | null;
+  photo_taken_at: string | null; // ISO string (UTC) or null
 }
 
 // Pages never call HTTP directly. They call this service, which calls ApiService.
@@ -46,12 +50,18 @@ export class RequestService {
     if (description === '') throw new Error('Please describe the problem.');
     if (!form.before_photo) throw new Error('Please add a before photo.');
 
+    // Coordinates go together. If only one is set, send neither (the server would refuse a half pair).
+    const hasLocation = form.latitude !== null && form.longitude !== null;
+
     const payload: CreateRequestPayload = {
       title,
       category_id: form.category_id,
       location_id: form.location_id,
       description,
       before_photo: form.before_photo,
+      latitude: hasLocation ? form.latitude : null,
+      longitude: hasLocation ? form.longitude : null,
+      photo_taken_at: form.photo_taken_at,
     };
 
     const created = await this.api.createRequest(payload);

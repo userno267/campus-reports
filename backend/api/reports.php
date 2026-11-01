@@ -49,6 +49,14 @@ $adminFrom = '
     LEFT JOIN users       u ON u.id = r.assigned_to
 ';
 
+// GPS fix and photo time (Feature 4). Only the detail views add these; lists do not need them.
+// No leading or trailing comma: the query adds one before it.
+$photoMetaColumns = <<<SQL
+    r.latitude,
+    r.longitude,
+    to_char(r.photo_taken_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS photo_taken_at
+SQL;
+
 // Stop with an error after undoing the open transaction.
 // Why: one helper keeps every error path the same and avoids forgotten rollbacks.
 function failAndRollBack(PDO $conn, int $status, string $message): void {
@@ -64,6 +72,58 @@ function loadAdminRequest(PDO $conn, int $id, string $columns, string $from): ?a
     $stmt->execute([$id]);
     $row = $stmt->fetch();
     return $row ?: null;
+}
+
+// True only for a real JSON number (int or float). Strings like "10.5" are refused.
+function isJsonNumber($value): bool {
+    return (is_int($value) || is_float($value)) && is_finite((float) $value);
+}
+
+// Reads the optional GPS fix and photo time sent with a new request (Feature 4).
+// The coordinates come as a pair: both or neither. The photo time is optional.
+// Returns [latitude, longitude, photo_taken_at]. Stops with 400 when something is invalid.
+function readPhotoMeta(array $data): array {
+    $lat = $data['latitude'] ?? null;
+    $lng = $data['longitude'] ?? null;
+
+    $latitude  = null;
+    $longitude = null;
+
+    if ($lat !== null || $lng !== null) {
+        // Both must be present, and both must be real numbers.
+        if (!isJsonNumber($lat) || !isJsonNumber($lng)) {
+            sendResponse(['error' => 'Send both latitude and longitude as numbers, or neither'], 400);
+        }
+        if ($lat < -90 || $lat > 90) {
+            sendResponse(['error' => 'Latitude must be between -90 and 90'], 400);
+        }
+        if ($lng < -180 || $lng > 180) {
+            sendResponse(['error' => 'Longitude must be between -180 and 180'], 400);
+        }
+        $latitude  = (float) $lat;
+        $longitude = (float) $lng;
+    }
+
+    $takenAt  = null;
+    $takenRaw = $data['photo_taken_at'] ?? null;
+    if ($takenRaw !== null) {
+        if (!is_string($takenRaw) || trim($takenRaw) === '') {
+            sendResponse(['error' => 'Photo time must be a date and time'], 400);
+        }
+        try {
+            $taken = new DateTimeImmutable($takenRaw);
+        } catch (Exception $e) {
+            sendResponse(['error' => 'Photo time must be a date and time'], 400);
+        }
+        // A few minutes of clock difference between the phone and the server is allowed.
+        if ($taken->getTimestamp() > time() + 300) {
+            sendResponse(['error' => 'Photo time cannot be in the future'], 400);
+        }
+        // Stored as UTC, like every other timestamp in the database.
+        $takenAt = $taken->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+    }
+
+    return [$latitude, $longitude, $takenAt];
 }
 
 // ---------- POST create a request (faculty only) ----------
@@ -95,6 +155,9 @@ if ($method === 'POST' && $action === 'create') {
         sendResponse(['error' => 'Photo must be sent as base64'], 400);
     }
 
+    // Feature 4: optional GPS and photo time. Checked here so bad values never reach the database.
+    [$latitude, $longitude, $takenAt] = readPhotoMeta($data);
+
     // Make sure the category and location really exist.
     $catCheck = $conn->prepare('SELECT 1 FROM categories WHERE id = ?');
     $catCheck->execute([$categoryId]);
@@ -112,13 +175,15 @@ if ($method === 'POST' && $action === 'create') {
     $conn->beginTransaction();
     try {
         $insert = $conn->prepare(
-            'INSERT INTO requests (title, description, category_id, location_id, before_photo, status, created_by)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
+            'INSERT INTO requests
+                (title, description, category_id, location_id, before_photo,
+                 latitude, longitude, photo_taken_at, status, created_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING id'
         );
         $insert->execute([
-            $title, $description, $categoryId, $locationId,
-            $photo, 'submitted', $user['id'],
+            $title, $description, $categoryId, $locationId, $photo,
+            $latitude, $longitude, $takenAt, 'submitted', $user['id'],
         ]);
         $newId = (int) $insert->fetchColumn();
 
@@ -212,15 +277,15 @@ if ($method === 'GET' && $action === 'all') {
     sendResponse(['requests' => $stmt->fetchAll()], 200);
 }
 
-// ---------- GET detail: one request with photos, timeline and review (admin only) ----------
+// ---------- GET detail: one request with photos, timeline, GPS and review (admin only) ----------
 if ($method === 'GET' && $action === 'detail') {
     requireUser($conn, ['admin']);
 
     $id = positiveInt($_GET['id'] ?? null, 'A request id is required');
 
-    // The detail view also needs both photos and the proof note.
+    // The detail view also needs both photos, the proof note, and the GPS fix and photo time.
     $stmt = $conn->prepare(
-        "SELECT $adminColumns, r.before_photo, r.after_photo, r.proof_note $adminFrom
+        "SELECT $adminColumns, r.before_photo, r.after_photo, r.proof_note, $photoMetaColumns $adminFrom
          WHERE r.id = ?"
     );
     $stmt->execute([$id]);
@@ -438,6 +503,7 @@ if ($method === 'POST' && $action === 'complete') {
 
     sendResponse(['request' => loadAdminRequest($conn, $requestId, $adminColumns, $adminFrom)], 200);
 }
+
 // ---------- POST reject_proof: awaiting_proof -> in_progress (admin only) ----------
 // The admin sends the proof back. The staff member keeps the job and sees the reason.
 if ($method === 'POST' && $action === 'reject_proof') {
@@ -489,7 +555,7 @@ if ($method === 'POST' && $action === 'reject_proof') {
     sendResponse(['request' => loadAdminRequest($conn, $requestId, $adminColumns, $adminFrom)], 200);
 }
 
-// ---------- GET my_detail: one of my own requests with photos, timeline and review (faculty only) ----------
+// ---------- GET my_detail: one of my own requests with photos, GPS, timeline and review (faculty only) ----------
 // Feature 2. The owner check is in the SQL, so a faculty member cannot open someone else's request.
 // A request that is not theirs gets the same 404 as a missing one, so ids cannot be guessed.
 if ($method === 'GET' && $action === 'my_detail') {
@@ -497,7 +563,7 @@ if ($method === 'GET' && $action === 'my_detail') {
     $id   = positiveInt($_GET['id'] ?? null, 'A request id is required');
 
     $stmt = $conn->prepare(
-        "SELECT $requestColumns, r.before_photo, r.after_photo, r.proof_note
+        "SELECT $requestColumns, r.before_photo, r.after_photo, r.proof_note, $photoMetaColumns
          FROM requests r
          JOIN categories c ON c.id = r.category_id
          JOIN locations  l ON l.id = r.location_id
@@ -539,6 +605,7 @@ if ($method === 'GET' && $action === 'my_detail') {
 
     sendResponse(['request' => $request], 200);
 }
+
 // A known action sent with the wrong HTTP method gets 405. Anything else is unknown.
 $knownActions = ['create', 'mine', 'queue', 'all', 'detail', 'assign', 'cancel', 'complete', 'reject_proof', 'my_detail'];
 if (in_array($action, $knownActions, true)) {

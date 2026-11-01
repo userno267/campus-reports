@@ -2,6 +2,8 @@
 -- Runs ONCE, the first time the postgres volume is empty.
 -- Demo USERS are not seeded here: their passwords must be hashed with PHP's
 -- password_hash(), so config.php seeds them.
+--
+-- Existing databases: run the ALTER TABLE migrations from the Feature 4 and C2 notes instead.
 
 -- Store and return all timestamps in UTC.
 ALTER DATABASE campus_reports SET timezone TO 'UTC';
@@ -39,25 +41,40 @@ CREATE TABLE categories (
 );
 
 CREATE TABLE requests (
-    id            INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    title         VARCHAR(255) NOT NULL,
-    description   TEXT NOT NULL,
-    category_id   INTEGER NOT NULL REFERENCES categories(id),
-    location_id   INTEGER NOT NULL REFERENCES locations(id),
-    department_id INTEGER REFERENCES departments(id),   -- set by admin on review
-    before_photo  TEXT NOT NULL,                        -- base64
-    after_photo   TEXT,                                 -- base64, uploaded by staff
-    proof_note    TEXT,
+    id              INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    title           VARCHAR(255) NOT NULL,
+    description     TEXT NOT NULL,
+    category_id     INTEGER NOT NULL REFERENCES categories(id),
+    location_id     INTEGER NOT NULL REFERENCES locations(id),
+    department_id   INTEGER REFERENCES departments(id),   -- set by admin on review
+    before_photo    TEXT NOT NULL,                        -- base64
+    -- Feature 4: where and when the problem photo was taken. NULL when the device could not provide them.
+    latitude        DOUBLE PRECISION,
+    longitude       DOUBLE PRECISION,
+    photo_taken_at  TIMESTAMPTZ,
+    after_photo     TEXT,                                 -- base64, uploaded by staff
+    proof_note      TEXT,
+    -- C2: where and when the proof photo was taken. Required for proof (the API checks it).
+    after_latitude        DOUBLE PRECISION,
+    after_longitude       DOUBLE PRECISION,
+    after_photo_taken_at  TIMESTAMPTZ,
     -- Label only (no deadlines, no timers). Set by the admin when assigning.
     -- NULL for requests that were never assigned.
-    priority      VARCHAR(10) CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
-    status        VARCHAR(20) NOT NULL DEFAULT 'submitted'
-                  CHECK (status IN ('submitted', 'assigned', 'in_progress',
-                                    'awaiting_proof', 'completed', 'cancelled')),
-    created_by    INTEGER NOT NULL REFERENCES users(id),
-    assigned_to   INTEGER REFERENCES users(id),
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+    priority        VARCHAR(10) CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
+    status          VARCHAR(20) NOT NULL DEFAULT 'submitted'
+                    CHECK (status IN ('submitted', 'assigned', 'in_progress',
+                                      'awaiting_proof', 'completed', 'cancelled')),
+    created_by      INTEGER NOT NULL REFERENCES users(id),
+    assigned_to     INTEGER REFERENCES users(id),
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Each coordinate pair is both set or both NULL, and within the valid range.
+    CONSTRAINT gps_both_or_neither CHECK ((latitude IS NULL) = (longitude IS NULL)),
+    CONSTRAINT latitude_range CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
+    CONSTRAINT longitude_range CHECK (longitude IS NULL OR longitude BETWEEN -180 AND 180),
+    CONSTRAINT after_gps_both_or_neither CHECK ((after_latitude IS NULL) = (after_longitude IS NULL)),
+    CONSTRAINT after_latitude_range CHECK (after_latitude IS NULL OR after_latitude BETWEEN -90 AND 90),
+    CONSTRAINT after_longitude_range CHECK (after_longitude IS NULL OR after_longitude BETWEEN -180 AND 180)
 );
 
 -- ONE-JOB RULE: a staff member can have at most one active request.

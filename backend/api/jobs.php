@@ -8,6 +8,8 @@ $action = $_GET['action'] ?? '';
 
 // Columns sent to the staff screen. Timestamps are ISO UTC strings, like the other endpoints.
 // Photos are included here because the staff member needs the problem photo and their own proof.
+// The problem's coordinates tell staff where to go. The proof's coordinates and time are
+// returned once the proof has been sent (C2).
 $jobColumns = <<<SQL
     r.id,
     r.title,
@@ -19,6 +21,11 @@ $jobColumns = <<<SQL
     r.before_photo,
     r.after_photo,
     r.proof_note,
+    r.latitude,
+    r.longitude,
+    r.after_latitude,
+    r.after_longitude,
+    to_char(r.after_photo_taken_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS after_photo_taken_at,
     -- The admin's reason when proof was sent back. Only while the job is in progress.
     -- A reason is an in_progress timeline row written by an admin (staff never write admin rows).
     CASE WHEN r.status = 'in_progress' THEN (
@@ -130,7 +137,7 @@ if ($method === 'POST' && $action === 'start') {
     sendResponse(['job' => loadJob($conn, $requestId, $jobColumns, $jobFrom)], 200);
 }
 
-// ---------- POST proof: in_progress -> awaiting_proof (after photo + optional note) ----------
+// ---------- POST proof: in_progress -> awaiting_proof (photo, GPS, photo time, optional note) ----------
 if ($method === 'POST' && $action === 'proof') {
     $user      = requireUser($conn, ['staff']);
     $data      = getJsonBody();
@@ -152,6 +159,11 @@ if ($method === 'POST' && $action === 'proof') {
         sendResponse(['error' => 'Note must be 300 characters or less'], 400);
     }
 
+    // C2: proof needs the location and the photo time. Checked here, before any database work.
+    [$latitude, $longitude, $takenAt] = readLocationFields(
+        $data, 'after_latitude', 'after_longitude', 'after_photo_taken_at', true
+    );
+
     $conn->beginTransaction();
     try {
         $status = lockOwnJob($conn, $requestId, (int) $user['id']);
@@ -165,13 +177,19 @@ if ($method === 'POST' && $action === 'proof') {
             );
         }
 
-        // Store the proof and move the job forward in one step.
+        // Store the proof, its location and its time, and move the job forward in one step.
         $update = $conn->prepare(
             "UPDATE requests
-             SET after_photo = ?, proof_note = ?, status = 'awaiting_proof', updated_at = now()
+             SET after_photo = ?, proof_note = ?,
+                 after_latitude = ?, after_longitude = ?, after_photo_taken_at = ?,
+                 status = 'awaiting_proof', updated_at = now()
              WHERE id = ?"
         );
-        $update->execute([$photo, $note === '' ? null : $note, $requestId]);
+        $update->execute([
+            $photo, $note === '' ? null : $note,
+            $latitude, $longitude, $takenAt,
+            $requestId,
+        ]);
 
         $event = $conn->prepare(
             'INSERT INTO request_events (request_id, status, remark, changed_by)

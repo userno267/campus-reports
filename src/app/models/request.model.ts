@@ -44,12 +44,17 @@ export interface RequestSummary {
 }
 
 // What the New Report form sends. before_photo is raw base64 (no "data:" prefix).
+// Feature 4: latitude, longitude and photo_taken_at are null when the device could not provide them.
+// The coordinates are always both set or both null.
 export interface CreateRequestPayload {
   title: string;
   category_id: number;
   location_id: number;
   description: string;
   before_photo: string;
+  latitude: number | null;
+  longitude: number | null;
+  photo_taken_at: string | null;        // ISO string (UTC), or null
 }
 
 // ===== ADMIN (Step 4) =====
@@ -88,11 +93,14 @@ export interface RequestReview {
   created_at: string;
 }
 
-// The detail view: the queue row plus both photos, the proof note, and the timeline.
+// The detail view: the queue row plus both photos, the proof note, the GPS fix, and the timeline.
 export interface AdminRequestDetail extends AdminRequestRow {
   before_photo: string;                 // raw base64
   after_photo: string | null;           // set when staff send proof (Step 5)
   proof_note: string | null;            // set when staff send proof (Step 5)
+  latitude: number | null;              // Feature 4
+  longitude: number | null;             // Feature 4
+  photo_taken_at: string | null;        // Feature 4
   events: RequestEvent[];
   review?: RequestReview | null;        // Step 8: null until the faculty member rates it
 }
@@ -125,7 +133,8 @@ export interface CancelRequestPayload {
 
 // ===== STAFF JOBS (Step 5) =====
 
-// The one job a staff member is working on. Includes both photos and the proof note.
+// The one job a staff member is working on. Includes both photos, the proof note,
+// the problem's location, and (once sent) the proof's location and photo time.
 export interface StaffJob {
   id: number;
   title: string;
@@ -138,15 +147,31 @@ export interface StaffJob {
   after_photo: string | null;           // raw base64, set when proof is sent
   proof_note: string | null;
   rejected_remark: string | null;       // set when the admin sent the proof back (in_progress only)
+  latitude: number | null;              // Feature 4: where the problem was reported
+  longitude: number | null;             // Feature 4
+  after_latitude: number | null;        // C2: where the proof photo was taken
+  after_longitude: number | null;       // C2
+  after_photo_taken_at: string | null;  // C2: when the proof photo was taken (ISO UTC)
   created_at: string;
   updated_at: string;
 }
 
-// What the proof call sends. proof_note is null when the staff member leaves it empty.
+// What the proof call sends. The location and photo time are required by the server.
 export interface SubmitProofPayload {
   request_id: number;
   after_photo: string;
   proof_note: string | null;
+  after_latitude: number;
+  after_longitude: number;
+  after_photo_taken_at: string;         // ISO string (UTC)
+}
+
+// The location and time captured with a proof photo, before it is sent.
+// Any field can be null while the phone is still getting its GPS fix.
+export interface ProofCapture {
+  latitude: number | null;
+  longitude: number | null;
+  takenAt: string | null;
 }
 
 // ===== REVIEWS (Step 6) =====
@@ -157,6 +182,7 @@ export interface CreateReviewPayload {
   rating: number;                       // 1 to 5
   comment: string | null;
 }
+
 // ===== REQUEST DETAILS (Feature 2) =====
 
 // One rating as the faculty member sees it on their own request.
@@ -166,14 +192,18 @@ export interface FacultyReview {
   created_at: string;
 }
 
-// The faculty detail view: one of my own requests, with both photos, the timeline and the rating.
+// The faculty detail view: one of my own requests, with both photos, the GPS fix, the timeline and the rating.
 export interface FacultyRequestDetail extends RequestSummary {
   before_photo: string;                 // raw base64
   after_photo: string | null;           // raw base64, set when staff send proof
   proof_note: string | null;
+  latitude: number | null;              // Feature 4
+  longitude: number | null;             // Feature 4
+  photo_taken_at: string | null;        // Feature 4
   events: RequestEvent[];
   review: FacultyReview | null;         // null until the faculty member rates it
 }
+
 // ===== STAFF REVIEWS (Step 7) =====
 
 // One review about the logged-in staff member.

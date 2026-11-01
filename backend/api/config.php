@@ -139,6 +139,63 @@ function requireUser(PDO $conn, array $allowedRoles = []): array {
     return $user;
 }
 
+// True for a real JSON number (int or float) that is finite. Strings like "10.5" are refused.
+function isPlainNumber($value): bool {
+    return (is_int($value) || is_float($value)) && is_finite((float) $value);
+}
+
+// Reads a GPS fix and a photo time from the JSON body. Used by the staff proof photo (C2).
+// The field names are passed in, so each endpoint can use its own.
+// $required = true means the location and the photo time must both be present.
+// Returns [latitude, longitude, taken_at as UTC 'Y-m-d H:i:s'], with nulls when not sent.
+// Stops with 400 when something is missing or wrong.
+function readLocationFields(array $data, string $latKey, string $lngKey, string $timeKey, bool $required): array {
+    $lat      = $data[$latKey] ?? null;
+    $lng      = $data[$lngKey] ?? null;
+    $takenRaw = $data[$timeKey] ?? null;
+
+    if ($required && ($lat === null || $lng === null || $takenRaw === null)) {
+        sendResponse(['error' => 'Location and photo time are required for proof'], 400);
+    }
+
+    $latitude  = null;
+    $longitude = null;
+    if ($lat !== null || $lng !== null) {
+        // Both must be present, and both must be real numbers.
+        if (!isPlainNumber($lat) || !isPlainNumber($lng)) {
+            sendResponse(['error' => 'Send both latitude and longitude as numbers, or neither'], 400);
+        }
+        if ($lat < -90 || $lat > 90) {
+            sendResponse(['error' => 'Latitude must be between -90 and 90'], 400);
+        }
+        if ($lng < -180 || $lng > 180) {
+            sendResponse(['error' => 'Longitude must be between -180 and 180'], 400);
+        }
+        $latitude  = (float) $lat;
+        $longitude = (float) $lng;
+    }
+
+    $takenAt = null;
+    if ($takenRaw !== null) {
+        if (!is_string($takenRaw) || trim($takenRaw) === '') {
+            sendResponse(['error' => 'Photo time must be a date and time'], 400);
+        }
+        try {
+            $taken = new DateTimeImmutable($takenRaw);
+        } catch (Exception $e) {
+            sendResponse(['error' => 'Photo time must be a date and time'], 400);
+        }
+        // A few minutes of clock difference between the phone and the server is allowed.
+        if ($taken->getTimestamp() > time() + 300) {
+            sendResponse(['error' => 'Photo time cannot be in the future'], 400);
+        }
+        // Stored as UTC, like every other timestamp in the database.
+        $takenAt = $taken->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+    }
+
+    return [$latitude, $longitude, $takenAt];
+}
+
 // ---------- Demo user seeding ----------
 // Users are seeded here (not in init.sql) because password_hash() runs in PHP.
 // Only runs when the users table is empty. All demo passwords are "demo1234".

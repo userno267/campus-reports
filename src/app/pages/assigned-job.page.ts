@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, ViewChild, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -8,8 +8,10 @@ import {
 import { RequestStatus, StaffJob } from '../models/request.model';
 import { StaffJobService } from '../services/staff-job.service';
 import { FeedbackService } from '../services/feedback.service';
-import { resizeImageToBase64 } from '../utils/photo.util';
+import { DeviceService, GpsStatus, PhotoSource } from '../services/device.service';
+import { resizeDataUrlToBase64, resizeImageToBase64 } from '../utils/photo.util';
 import { PriorityBadgeComponent } from '../components/priority-badge.component';
+import { LocationMapComponent } from '../components/location-map.component';
 
 // Staff-facing labels and badge colours for each status.
 const STATUS_LABELS: Record<RequestStatus, string> = {
@@ -30,6 +32,9 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
   cancelled: 'danger',
 };
 
+// 'idle' = no fix asked yet, 'loading' = waiting for the device.
+type GpsState = 'idle' | 'loading' | GpsStatus;
+
 // "Assigned" tab for staff. Shows the one active job and walks through three steps:
 // assigned -> started -> proof sent (awaiting admin review).
 // Why no separate detail page: the job is always the same single item.
@@ -40,7 +45,7 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
     DatePipe, FormsModule,
     IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonItem,
     IonList, IonTextarea, IonTitle, IonToolbar,
-    PriorityBadgeComponent,
+    PriorityBadgeComponent, LocationMapComponent,
   ],
   template: `
     <ion-header class="ion-no-border">
@@ -68,9 +73,28 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
             Updated {{ job.updated_at | date: 'medium' }}
           </p>
           <p class="detail-text">{{ job.description }}</p>
+          <p class="meta"><strong>Problem location:</strong> {{ formatCoords(job.latitude, job.longitude) }}</p>
           <img class="photo"
                [src]="'data:image/jpeg;base64,' + job.before_photo"
                alt="Problem photo" />
+
+          <!-- Map to the problem (free: Leaflet + OpenStreetMap). Only while the job is still open. -->
+          @if (job.status === 'assigned' || job.status === 'in_progress') {
+            <app-location-map [problemLat]="job.latitude" [problemLng]="job.longitude"
+                              [staffLat]="staffLat" [staffLng]="staffLng" />
+            <p class="gps-text">{{ staffGpsText }}</p>
+            <p class="meta">Your position is shown on this screen only. It is not saved.</p>
+            <ion-button expand="block" fill="outline" class="action-btn-outline"
+                        [disabled]="busy || staffGpsState === 'loading'" (click)="updateMyPosition()">
+              Update my position
+            </ion-button>
+            @if (job.latitude !== null && job.longitude !== null) {
+              <p class="meta">
+                <a class="osm-link" target="_blank" rel="noopener"
+                   [href]="openMapLink(job.latitude, job.longitude)">Open in a larger map</a>
+              </p>
+            }
+          }
         </div>
 
         <!-- Step 1: assigned, not started yet -->
@@ -95,12 +119,36 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
             <h3 class="section-title">Proof of completed work</h3>
             <p class="meta">Take a photo of the finished work, add an optional note, then send it to the admin.</p>
 
-            <input class="file-input" type="file" accept="image/*" capture="environment"
+            <!-- Two separate buttons: take a new photo, or choose one that already exists. -->
+            <input #cameraInput type="file" accept="image/*" capture="environment" hidden
                    (change)="onPhotoPicked($event)" />
+            <input #galleryInput type="file" accept="image/*" hidden
+                   (change)="onPhotoPicked($event)" />
+
+            <div class="photo-buttons">
+              <ion-button expand="block" class="action-btn" [disabled]="busy" (click)="openPhoto('camera')">
+                Take photo
+              </ion-button>
+              <ion-button expand="block" fill="outline" class="action-btn-outline"
+                          [disabled]="busy" (click)="openPhoto('gallery')">
+                Choose photo
+              </ion-button>
+            </div>
 
             @if (previewSrc) {
               <img class="photo" [src]="previewSrc" alt="After photo preview" />
+              <p class="meta">Photo time: {{ proofTakenAt | date: 'medium' }}</p>
             }
+
+            <!-- The proof needs a location. It is fixed when the photo is picked. -->
+            <div class="gps-box">
+              <p class="gps-label">Location of this proof (required)</p>
+              <p class="gps-text">{{ gpsText }}</p>
+              <ion-button expand="block" fill="outline" class="action-btn-outline"
+                          [disabled]="busy || gpsState === 'loading'" (click)="fixLocation()">
+                Try GPS again
+              </ion-button>
+            </div>
 
             <ion-list class="note-list">
               <ion-item>
@@ -111,7 +159,7 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
             </ion-list>
 
             <ion-button expand="block" class="action-btn ion-margin-top"
-                        [disabled]="busy || !afterPhoto" (click)="submitProof()">
+                        [disabled]="!canSendProof()" (click)="submitProof()">
               {{ busy ? 'Sending...' : 'Send proof' }}
             </ion-button>
           </div>
@@ -127,6 +175,10 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
                    [src]="'data:image/jpeg;base64,' + job.after_photo"
                    alt="Your after photo" />
             }
+            <p class="meta">
+              <strong>Taken at:</strong> {{ job.after_photo_taken_at | date: 'medium' }} ·
+              <strong>Location:</strong> {{ formatCoords(job.after_latitude, job.after_longitude) }}
+            </p>
             @if (job.proof_note) {
               <p class="detail-text"><strong>Your note:</strong> {{ job.proof_note }}</p>
             }
@@ -198,6 +250,11 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
       margin: 0 0 4px;
     }
 
+    .osm-link {
+      color: #29483d;
+      font-weight: 600;
+    }
+
     .photo {
       display: block;
       width: 100%;
@@ -207,9 +264,30 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
       margin-top: 12px;
     }
 
-    .file-input {
-      display: block;
+    .photo-buttons {
       margin: 12px 0;
+    }
+
+    .photo-buttons ion-button {
+      margin-top: 8px;
+    }
+
+    .gps-box {
+      margin-top: 12px;
+      padding: 12px;
+      border: 1px solid #e2e8dc;
+      border-radius: 14px;
+      background: #f6f5ee;
+    }
+
+    .gps-label {
+      margin: 0 0 6px;
+      font-weight: 600;
+      color: #29483d;
+    }
+
+    .gps-text {
+      margin: 8px 0;
       color: #29483d;
     }
 
@@ -226,7 +304,7 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
       --color: #29483d;
     }
 
-        .rejected-card {
+    .rejected-card {
       background: #fdf5e6;
       border: 1px solid #e9d3a6;
       border-radius: 14px;
@@ -252,21 +330,45 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
       font-weight: 700;
       text-transform: none;
     }
+
+    .action-btn-outline {
+      --color: #29483d;
+      --border-color: #29483d;
+      --border-radius: 14px;
+      font-weight: 700;
+      text-transform: none;
+    }
   `],
 })
 export class AssignedJobPage {
   private jobService = inject(StaffJobService);
   private feedback = inject(FeedbackService);
+  private device = inject(DeviceService);
   private cdr = inject(ChangeDetectorRef);
+
+  @ViewChild('cameraInput') cameraInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('galleryInput') galleryInput?: ElementRef<HTMLInputElement>;
 
   job: StaffJob | null = null;
   loading = false;
   busy = false;
 
   // The proof the staff member is preparing. Cleared after it is sent.
-  afterPhoto: string | null = null;   // raw base64 for the API
-  previewSrc: string | null = null;   // data URL for the preview image
+  afterPhoto: string | null = null;    // raw base64 for the API
+  previewSrc: string | null = null;    // data URL for the preview image
+  proofTakenAt: string | null = null;  // ISO UTC: when the photo was taken (or picked in the browser)
   note = '';
+
+  // The proof's location, captured when the photo is picked.
+  gpsState: GpsState = 'idle';
+  proofLatitude: number | null = null;
+  proofLongitude: number | null = null;
+
+  // The staff member's own position, used only to draw the map and the distance.
+  // It lives in memory on this screen. It is never sent to the server or saved.
+  staffGpsState: GpsState = 'idle';
+  staffLat: number | null = null;
+  staffLng: number | null = null;
 
   // Ionic keeps tab pages alive, so reload every time the tab is shown.
   ionViewWillEnter() {
@@ -278,11 +380,17 @@ export class AssignedJobPage {
     this.cdr.markForCheck();
     try {
       const job = await this.jobService.loadCurrent();
-      // A different job means the old photo and note do not belong to it.
-      if (job?.id !== this.job?.id) {
+      const changed = job?.id !== this.job?.id;
+      // A different job means the old photo, note, location and staff position do not belong to it.
+      if (changed) {
         this.clearProof();
+        this.clearStaffPosition();
       }
       this.job = job;
+      // Show the staff member where they are, once, for a new open job.
+      if (changed && job && job.latitude !== null && (job.status === 'assigned' || job.status === 'in_progress')) {
+        void this.updateMyPosition();
+      }
     } catch (e: any) {
       await this.feedback.toast(e.message ?? 'Could not load your job.');
     } finally {
@@ -307,22 +415,155 @@ export class AssignedJobPage {
     }
   }
 
-  // Resize the photo in the browser first, so the upload stays small.
+  // Send is allowed only with a photo and a location fix.
+  canSendProof(): boolean {
+    return !this.busy && this.afterPhoto !== null && this.proofLatitude !== null && this.proofLongitude !== null;
+  }
+
+  // The text shown under "Location of this proof".
+  get gpsText(): string {
+    switch (this.gpsState) {
+      case 'granted':
+        return this.proofLatitude !== null && this.proofLongitude !== null
+          ? `${this.proofLatitude.toFixed(5)}, ${this.proofLongitude.toFixed(5)}`
+          : 'Location not checked yet.';
+      case 'loading':
+        return 'Getting your location...';
+      case 'denied':
+        return 'Location permission is off. Turn it on, then tap Try GPS again. Proof needs your location.';
+      case 'timeout':
+        return 'Location took too long. Tap Try GPS again.';
+      case 'unavailable':
+        return 'Location is not available here. Proof needs your location.';
+      default:
+        return 'Take a photo to get the location.';
+    }
+  }
+
+  // The text shown under the map for the staff member's own position.
+  get staffGpsText(): string {
+    switch (this.staffGpsState) {
+      case 'granted':
+        return this.staffLat !== null ? 'Your position is on the map.' : 'Position not checked yet.';
+      case 'loading':
+        return 'Getting your position...';
+      case 'denied':
+        return 'Location is off. Turn it on to see how far the problem is.';
+      case 'timeout':
+        return 'Your position took too long. Tap Update my position.';
+      case 'unavailable':
+        return 'Your position is not available here.';
+      default:
+        return 'Tap Update my position to see how far the problem is.';
+    }
+  }
+
+  // Asks for the staff member's position, for the map only. Not saved anywhere.
+  async updateMyPosition() {
+    if (this.staffGpsState === 'loading') return;
+
+    this.staffGpsState = 'loading';
+    this.cdr.markForCheck();
+
+    const result = await this.device.getPosition();
+    this.staffGpsState = result.status;
+
+    if (result.status === 'granted') {
+      this.staffLat = result.latitude ?? null;
+      this.staffLng = result.longitude ?? null;
+    } else {
+      this.staffLat = null;
+      this.staffLng = null;
+    }
+    this.cdr.markForCheck();
+  }
+
+  // Ask the device for the location of the proof. Called when a photo is picked, and by the Try again button.
+  async fixLocation() {
+    if (this.gpsState === 'loading') return;
+
+    this.gpsState = 'loading';
+    this.cdr.markForCheck();
+
+    const result = await this.device.getPosition();
+    this.gpsState = result.status;
+
+    if (result.status === 'granted') {
+      this.proofLatitude = result.latitude ?? null;
+      this.proofLongitude = result.longitude ?? null;
+    } else {
+      this.proofLatitude = null;
+      this.proofLongitude = null;
+      await this.feedback.toast(this.gpsText);
+    }
+    this.cdr.markForCheck();
+  }
+
+  // Shows "lat, lng" for a stored pair, or a short note when none was recorded.
+  formatCoords(lat: number | null, lng: number | null): string {
+    if (lat === null || lng === null) return 'Not recorded';
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+
+  // A free link to a larger OpenStreetMap view of the problem location.
+  openMapLink(lat: number, lng: number): string {
+    return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=18/${lat}/${lng}`;
+  }
+
+  // "Take photo" opens the camera. "Choose photo" opens the gallery or file picker.
+  // On the phone app these are the native camera or gallery. In a browser they are the two file inputs.
+  async openPhoto(source: PhotoSource) {
+    if (this.device.isNative()) {
+      await this.pickNative(source);
+      return;
+    }
+    const input = source === 'camera' ? this.cameraInput?.nativeElement : this.galleryInput?.nativeElement;
+    input?.click();
+  }
+
+  private async pickNative(source: PhotoSource) {
+    this.busy = true;
+    this.cdr.markForCheck();
+    try {
+      const pick = await this.device.pickPhotoNative(source);
+      if (!pick) return;   // the user cancelled
+      this.afterPhoto = await resizeDataUrlToBase64(pick.dataUrl);
+      this.previewSrc = 'data:image/jpeg;base64,' + this.afterPhoto;
+      this.proofTakenAt = pick.takenAt;
+    } catch (e: any) {
+      await this.feedback.toast(e.message ?? 'Could not read that photo. Please try again.');
+      return;
+    } finally {
+      this.busy = false;
+      this.cdr.markForCheck();
+    }
+    // Get the location for this photo. Runs after the photo is shown, so the screen does not wait.
+    void this.fixLocation();
+  }
+
+  // Browser only: resize the picked file first, so the upload stays small.
+  // The time is when the file was picked, because a browser file has no camera time.
   async onPhotoPicked(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
 
+    this.busy = true;
+    this.cdr.markForCheck();
     try {
       this.afterPhoto = await resizeImageToBase64(file);
       this.previewSrc = 'data:image/jpeg;base64,' + this.afterPhoto;
+      this.proofTakenAt = new Date().toISOString();
     } catch (e: any) {
       await this.feedback.toast('Could not read that photo. Please try again.');
+      return;
     } finally {
       // Clear the input so picking the same photo again still fires the change event.
       input.value = '';
+      this.busy = false;
       this.cdr.markForCheck();
     }
+    void this.fixLocation();
   }
 
   async submitProof() {
@@ -331,7 +572,11 @@ export class AssignedJobPage {
     this.busy = true;
     this.cdr.markForCheck();
     try {
-      this.job = await this.jobService.submitProof(this.job.id, this.afterPhoto, this.note);
+      this.job = await this.jobService.submitProof(this.job.id, this.afterPhoto, this.note, {
+        latitude: this.proofLatitude,
+        longitude: this.proofLongitude,
+        takenAt: this.proofTakenAt,
+      });
       this.clearProof();
       await this.feedback.toast('Proof sent to the admin.', 'success');
     } catch (e: any) {
@@ -345,7 +590,17 @@ export class AssignedJobPage {
   private clearProof() {
     this.afterPhoto = null;
     this.previewSrc = null;
+    this.proofTakenAt = null;
     this.note = '';
+    this.gpsState = 'idle';
+    this.proofLatitude = null;
+    this.proofLongitude = null;
+  }
+
+  private clearStaffPosition() {
+    this.staffGpsState = 'idle';
+    this.staffLat = null;
+    this.staffLng = null;
   }
 
   statusLabel(status: RequestStatus): string {
