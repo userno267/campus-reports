@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
+import { environment } from '../../environments/environment';
 import { Department, RegisterInput, User } from '../models/user.model';
 import {
   AdminRequestDetail,
@@ -9,7 +10,8 @@ import {
   CampusLocation,
   CancelRequestPayload,
   CreateRequestPayload,
-  CreateReviewPayload,
+  FacultyRequestDetail,
+    CreateReviewPayload,
   RequestStatus,
   RequestSummary,
   StaffJob,
@@ -19,7 +21,7 @@ import {
 } from '../models/request.model';
 
 // Exported so the interceptor can tell our API apart from other websites.
-export const API_BASE = 'http://localhost:8000/api';
+export const API_BASE = environment.apiBase;
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
@@ -107,7 +109,17 @@ export class ApiService {
       throw new Error(e.error?.error ?? 'Failed to load your requests');
     }
   }
-
+  // Feature 2: one of my own requests, with photos, timeline and rating. The server checks the owner.
+  async getMyRequestDetail(id: number): Promise<FacultyRequestDetail> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.get(`${API_BASE}/reports.php?action=my_detail&id=${id}`)
+      );
+      return response.request;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to load the request');
+    }
+  }
   // ===== ADMIN REQUESTS (Step 4) =====
   async getAdminQueue(): Promise<AdminRequestRow[]> {
     try {
@@ -221,7 +233,17 @@ export class ApiService {
       throw new Error(e.error?.error ?? 'Could not send the proof');
     }
   }
-
+  // Admin sends the proof back to the staff member. The reason is required.
+  async rejectProof(requestId: number, remark: string): Promise<AdminRequestRow> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/reports.php?action=reject_proof`, { request_id: requestId, remark })
+      );
+      return response.request;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Could not send the proof back');
+    }
+  }
   // ===== REVIEWS (Step 6) =====
   // Faculty only. The server checks the owner, the status, and that it is the first review.
   async createReview(payload: CreateReviewPayload): Promise<void> {

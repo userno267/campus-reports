@@ -18,7 +18,16 @@ $jobColumns = <<<SQL
     r.before_photo,
     r.after_photo,
     r.proof_note,
-    to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+    -- The admin's reason when proof was sent back. Only while the job is in progress.
+    -- A reason is an in_progress timeline row written by an admin (staff never write admin rows).
+    CASE WHEN r.status = 'in_progress' THEN (
+        SELECT e.remark
+        FROM request_events e
+        JOIN users a ON a.id = e.changed_by AND a.role = 'admin'
+        WHERE e.request_id = r.id AND e.status = 'in_progress'
+        ORDER BY e.id DESC
+        LIMIT 1
+    ) END AS rejected_remark,    to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
     to_char(r.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
 SQL;
 

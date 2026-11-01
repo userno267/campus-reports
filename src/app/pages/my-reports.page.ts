@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import {
+import { Router } from '@angular/router';import {
   IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonItem,
   IonLabel, IonList, IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
 } from '@ionic/angular';
@@ -63,8 +63,7 @@ const RATING_CHOICES = [
       @if (requests.length > 0) {
         @for (r of requests; track r.id) {
           <div class="request-card">
-            <ion-item lines="none" class="request-row">
-              <ion-label class="ion-text-wrap">
+<ion-item lines="none" class="request-row" button detail="true" (click)="openDetails(r.id)">              <ion-label class="ion-text-wrap">
                 <h2>{{ r.title }}</h2>
                 <p>{{ r.category_name }} · {{ r.location_name }}</p>
                 <p class="meta">Reported {{ r.created_at | date: 'mediumDate' }}</p>
@@ -191,7 +190,7 @@ export class MyReportsPage {
   private requestService = inject(RequestService);
   private feedback = inject(FeedbackService);
   private cdr = inject(ChangeDetectorRef);
-
+  private router = inject(Router);
   requests: RequestSummary[] = [];
   loading = false;
 
@@ -219,7 +218,10 @@ export class MyReportsPage {
       this.cdr.markForCheck();
     }
   }
-
+  // Feature 2: tapping a request opens its details page (outside the tabs).
+  openDetails(requestId: number) {
+    this.router.navigate(['/request', requestId]);
+  }
   // Opening a form for another request replaces the one that was open.
   openRating(requestId: number) {
     this.ratingFor = requestId;

@@ -79,8 +79,15 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
         <!-- Step 2: in progress, send proof of the finished work -->
         @if (job.status === 'in_progress') {
           <div class="job-card ion-margin-top">
-            <h3 class="section-title">Proof of completed work</h3>
-            <p class="meta">Take a photo of the finished work, add an optional note, then send it to the admin.</p>
+            @if (job.rejected_remark) {
+              <div class="rejected-card">
+                <strong>Sent back by the admin:</strong>
+                <p class="detail-text">{{ job.rejected_remark }}</p>
+                <p class="meta">Please fix this and send proof again.</p>
+              </div>
+            }
+
+            <h3 class="section-title">Proof of completed work</h3>            <p class="meta">Take a photo of the finished work, add an optional note, then send it to the admin.</p>
 
             <input class="file-input" type="file" accept="image/*" capture="environment"
                    (change)="onPhotoPicked($event)" />
@@ -204,6 +211,15 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
     .note-list ion-item {
       --background: #fbfaf5;
       --color: #29483d;
+    }
+
+        .rejected-card {
+      background: #fdf5e6;
+      border: 1px solid #e9d3a6;
+      border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      color: #7a5a12;
     }
 
     .empty-card {

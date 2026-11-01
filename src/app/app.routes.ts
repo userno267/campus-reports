@@ -12,8 +12,12 @@ export const routes: Routes = [
     loadComponent: () => import('./pages/register.page').then((m) => m.RegisterPage),
   },
 
-  { path: 'home', redirectTo: '', pathMatch: 'full' },
-  { path: 'test-reports', loadComponent: () => import('./pages/test-reports.page').then((m) => m.TestReportsPage) },
+    // Feature 2: request details. Outside the tabs, so it has its own back button.
+  {
+    path: 'request/:id',
+    canActivate: [roleGuard('faculty')],
+    loadComponent: () => import('./pages/request-details.page').then((m) => m.RequestDetailsPage),
+  },
   {
     path: 'tabs',
     canActivate: [authGuard], // must be logged in

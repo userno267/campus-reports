@@ -144,10 +144,23 @@ interface AssignForm {
 
           <ion-button expand="block" class="action-btn ion-margin-top"
                       [disabled]="busy" (click)="confirmComplete()">
-            {{ busy ? 'Saving...' : 'Mark completed' }}
+                     {{ busy ? 'Saving...' : 'Mark completed' }}
+          </ion-button>
+
+          <!-- Send the proof back to staff with a reason they can act on. -->
+          <ion-list class="card-list ion-margin-top">
+            <ion-item>
+              <ion-textarea label="Reason for sending back" labelPlacement="stacked" [autoGrow]="true"
+                            maxlength="300" placeholder="For example: the photo does not show the finished work"
+                            [(ngModel)]="rejectRemark"></ion-textarea>
+            </ion-item>
+          </ion-list>
+
+          <ion-button expand="block" fill="outline" color="warning" class="ion-margin-top"
+                      [disabled]="busy" (click)="confirmSendBack()">
+            Send back to staff
           </ion-button>
         }
-
         <!-- Assignment form. Only while the request is still submitted or assigned. -->
         @if (canChange) {
           <ion-list class="card-list ion-margin-top">
@@ -312,8 +325,9 @@ export class ManageReportsPage implements OnInit {
   departments: Department[] = [];
   allStaff: StaffMember[] = [];
   selected: AdminRequestDetail | null = null;
-  form: AssignForm = { department_id: null, staff_id: null, remark: '' };
-  loading = false;
+ form: AssignForm = { department_id: null, staff_id: null, remark: '' };
+   rejectRemark = ''; 
+ loading = false;
   busy = false;
 
   // Departments rarely change, so load them once when the page is created.
@@ -363,7 +377,8 @@ export class ManageReportsPage implements OnInit {
       const detail = await this.adminService.loadDetail(id);
       await this.loadStaff();
       this.selected = detail;
-      this.form = {
+      this.rejectRemark = '';
+            this.form = {
         department_id: detail.department_id ?? detail.suggested_department_id,
         staff_id: detail.assigned_to,
         remark: '',
@@ -487,7 +502,44 @@ export class ManageReportsPage implements OnInit {
       this.cdr.markForCheck();
     }
   }
+  // Send the proof back. The reason is required so the staff member knows what to fix.
+  async confirmSendBack() {
+    if (!this.selected) return;
+    const requestId = this.selected.id;
+    const remark = this.rejectRemark.trim();
+    if (remark === '') {
+      await this.feedback.toast('Please write a reason so the staff member knows what to fix.');
+      return;
+    }
 
+    const alert = await this.alertCtrl.create({
+      header: 'Send back to staff?',
+      message: 'The staff member will see your reason and can send proof again.',
+      buttons: [
+        { text: 'Not yet', role: 'cancel' },
+        { text: 'Yes, send back', handler: () => this.doSendBack(requestId, remark) },
+      ],
+    });
+    await alert.present();
+  }
+
+  private async doSendBack(requestId: number, remark: string) {
+    this.busy = true;
+    this.cdr.markForCheck();
+    try {
+      await this.adminService.rejectProof(requestId, remark);
+      await this.feedback.toast('Sent back to staff.', 'success');
+      this.rejectRemark = '';
+      this.selected = null;
+      await this.loadQueue();
+    } catch (e: any) {
+      // Stay on the detail view so the admin can read the error and try again.
+      await this.feedback.toast(e.message ?? 'Could not send the request back.');
+    } finally {
+      this.busy = false;
+      this.cdr.markForCheck();
+    }
+  }
   // Step 6: the Mark completed button is only shown when proof is waiting.
   get canComplete(): boolean {
     return this.selected?.status === 'awaiting_proof';

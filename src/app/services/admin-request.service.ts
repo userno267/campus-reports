@@ -67,7 +67,15 @@ export class AdminRequestService {
     this.requireAdmin();
     await this.api.cancelRequest({ request_id: requestId, remark });
   }
-
+  // Feature 1: send the proof back to the staff member. The reason is required.
+  async rejectProof(requestId: number, remark: string): Promise<void> {
+    this.requireAdmin();
+    const trimmed = remark.trim();
+    if (trimmed === '') {
+      throw new Error('Please write a reason so the staff member knows what to fix.');
+    }
+    await this.api.rejectProof(requestId, trimmed);
+  }
   // Step 6: approve the staff proof. The server only allows this from awaiting_proof.
   async complete(requestId: number, remark: string = ''): Promise<void> {
     this.requireAdmin();

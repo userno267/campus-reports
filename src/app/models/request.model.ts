@@ -129,6 +129,7 @@ export interface StaffJob {
   before_photo: string;                 // raw base64
   after_photo: string | null;           // raw base64, set when proof is sent
   proof_note: string | null;
+  rejected_remark: string | null;       // set when the admin sent the proof back (in_progress only)
   created_at: string;
   updated_at: string;
 }
@@ -148,7 +149,23 @@ export interface CreateReviewPayload {
   rating: number;                       // 1 to 5
   comment: string | null;
 }
+// ===== REQUEST DETAILS (Feature 2) =====
 
+// One rating as the faculty member sees it on their own request.
+export interface FacultyReview {
+  rating: number;                       // 1 to 5
+  comment: string | null;
+  created_at: string;
+}
+
+// The faculty detail view: one of my own requests, with both photos, the timeline and the rating.
+export interface FacultyRequestDetail extends RequestSummary {
+  before_photo: string;                 // raw base64
+  after_photo: string | null;           // raw base64, set when staff send proof
+  proof_note: string | null;
+  events: RequestEvent[];
+  review: FacultyReview | null;         // null until the faculty member rates it
+}
 // ===== STAFF REVIEWS (Step 7) =====
 
 // One review about the logged-in staff member.

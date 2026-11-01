@@ -5,6 +5,7 @@ import {
   CampusLocation,
   CreateRequestPayload,
   CreateReviewPayload,
+  FacultyRequestDetail,
   RequestCategory,
   RequestSummary,
 } from '../models/request.model';
@@ -60,6 +61,12 @@ export class RequestService {
   async getMyRequests(): Promise<RequestSummary[]> {
     if (!this.auth.user()) throw new Error('Please log in again.');
     return this.api.getMyRequests();
+  }
+
+  // Feature 2: one of my own requests, with photos, timeline and rating.
+  async getMyRequestDetail(id: number): Promise<FacultyRequestDetail> {
+    if (!this.auth.user()) throw new Error('Please log in again.');
+    return this.api.getMyRequestDetail(id);
   }
 
   // Step 6: rate the staff member after the request is completed. Reviews are final.

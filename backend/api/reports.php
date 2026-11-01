@@ -421,10 +421,109 @@ if ($method === 'POST' && $action === 'complete') {
 
     sendResponse(['request' => loadAdminRequest($conn, $requestId, $adminColumns, $adminFrom)], 200);
 }
+// ---------- POST reject_proof: awaiting_proof -> in_progress (admin only) ----------
+// The admin sends the proof back. The staff member keeps the job and sees the reason.
+if ($method === 'POST' && $action === 'reject_proof') {
+    $admin = requireUser($conn, ['admin']);
+    $data  = getJsonBody();
 
+    $requestId = positiveInt($data['request_id'] ?? null, 'A request id is required');
+    $remark    = textField($data, 'remark');
+
+    // The reason is required: the staff member needs to know what to fix.
+    if ($remark === '') {
+        sendResponse(['error' => 'Please write a reason for sending the proof back'], 400);
+    }
+    if (mb_strlen($remark) > 300) {
+        sendResponse(['error' => 'Remark must be 300 characters or less'], 400);
+    }
+
+    $conn->beginTransaction();
+    try {
+        // Lock the row so a double tap cannot send it back twice.
+        $cur = $conn->prepare('SELECT status FROM requests WHERE id = ? FOR UPDATE');
+        $cur->execute([$requestId]);
+        $current = $cur->fetch();
+        if (!$current) {
+            failAndRollBack($conn, 404, 'Request not found');
+        }
+        // Only proof that was sent can be sent back.
+        if ($current['status'] !== 'awaiting_proof') {
+            failAndRollBack($conn, 409, 'Only a request that is awaiting proof can be sent back');
+        }
+
+        // assigned_to does not change, so the one-job index is not affected.
+        $update = $conn->prepare("UPDATE requests SET status = 'in_progress', updated_at = now() WHERE id = ?");
+        $update->execute([$requestId]);
+
+        // The timeline row holds the reason. jobs.php reads it back for the staff screen.
+        $event = $conn->prepare(
+            'INSERT INTO request_events (request_id, status, remark, changed_by)
+             VALUES (?, ?, ?, ?)'
+        );
+        $event->execute([$requestId, 'in_progress', $remark, $admin['id']]);
+
+        $conn->commit();
+    } catch (PDOException $e) {
+        error_log('Reject proof failed: ' . $e->getMessage());
+        failAndRollBack($conn, 500, 'Could not send the proof back');
+    }
+
+    sendResponse(['request' => loadAdminRequest($conn, $requestId, $adminColumns, $adminFrom)], 200);
+}
+
+// ---------- GET my_detail: one of my own requests with photos, timeline and review (faculty only) ----------
+// Feature 2. The owner check is in the SQL, so a faculty member cannot open someone else's request.
+// A request that is not theirs gets the same 404 as a missing one, so ids cannot be guessed.
+if ($method === 'GET' && $action === 'my_detail') {
+    $user = requireUser($conn, ['faculty']);
+    $id   = positiveInt($_GET['id'] ?? null, 'A request id is required');
+
+    $stmt = $conn->prepare(
+        "SELECT $requestColumns, r.before_photo, r.after_photo, r.proof_note
+         FROM requests r
+         JOIN categories c ON c.id = r.category_id
+         JOIN locations  l ON l.id = r.location_id
+         LEFT JOIN users   s  ON s.id = r.assigned_to
+         LEFT JOIN reviews rv ON rv.request_id = r.id
+         WHERE r.id = ? AND r.created_by = ?"
+    );
+    $stmt->execute([$id, $user['id']]);
+    $request = $stmt->fetch();
+    if (!$request) {
+        sendResponse(['error' => 'Request not found'], 404);
+    }
+
+    // Timeline: every status change, oldest first.
+    $events = $conn->prepare(<<<'SQL'
+        SELECT e.status,
+               e.remark,
+               u.name AS changed_by_name,
+               to_char(e.changed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS changed_at
+        FROM request_events e
+        JOIN users u ON u.id = e.changed_by
+        WHERE e.request_id = ?
+        ORDER BY e.changed_at, e.id
+    SQL);
+    $events->execute([$id]);
+    $request['events'] = $events->fetchAll();
+
+    // The rating for this request, with its comment. Null until the faculty member rates it.
+    $reviewStmt = $conn->prepare(<<<'SQL'
+        SELECT rv.rating,
+               rv.comment,
+               to_char(rv.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+        FROM reviews rv
+        WHERE rv.request_id = ?
+    SQL);
+    $reviewStmt->execute([$id]);
+    $review = $reviewStmt->fetch();
+    $request['review'] = $review ?: null;
+
+    sendResponse(['request' => $request], 200);
+}
 // A known action sent with the wrong HTTP method gets 405. Anything else is unknown.
-$knownActions = ['create', 'mine', 'queue', 'all', 'detail', 'assign', 'cancel', 'complete'];
-if (in_array($action, $knownActions, true)) {
+$knownActions = ['create', 'mine', 'queue', 'all', 'detail', 'assign', 'cancel', 'complete', 'reject_proof', 'my_detail'];if (in_array($action, $knownActions, true)) {
     sendResponse(['error' => 'Method not allowed'], 405);
 }
 sendResponse(['error' => 'Invalid action'], 400);

@@ -2,10 +2,12 @@
 // `ng build` replaces `environment.ts` with `environment.prod.ts`.
 // The list of file replacements can be found in `angular.json`.
 
+// Development settings. `ionic serve` (the browser) uses this file.
 export const environment = {
-  production: false
+  production: false,
+  // The backend as seen from this PC (Docker on localhost).
+  apiBase: 'http://localhost:8000/api',
 };
-
 /*
  * For easier debugging in development mode, you can import the following file
  * to ignore zone related error stack frames such as `zone.run`, `zoneDelegate.invokeTask`.
