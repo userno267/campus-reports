@@ -10,6 +10,7 @@ import {
   CancelRequestPayload,
   CreateRequestPayload,
   CreateReviewPayload,
+  RequestStatus,
   RequestSummary,
   StaffJob,
   StaffMember,
@@ -114,6 +115,19 @@ export class ApiService {
       return response.requests ?? [];
     } catch (e: any) {
       throw new Error(e.error?.error ?? 'Failed to load the request queue');
+    }
+  }
+
+  // Step 8: every request in any status, read-only. Pass a status to filter, or null for all.
+  async getAllRequests(status: RequestStatus | null = null): Promise<AdminRequestRow[]> {
+    try {
+      const url = status
+        ? `${API_BASE}/reports.php?action=all&status=${encodeURIComponent(status)}`
+        : `${API_BASE}/reports.php?action=all`;
+      const response: any = await firstValueFrom(this.http.get(url));
+      return response.requests ?? [];
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Failed to load the requests');
     }
   }
 

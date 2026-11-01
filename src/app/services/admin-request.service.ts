@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { ApiService } from './api.service';
 import { AuthService } from './auth.service';
-import { AdminRequestDetail, AdminRequestRow, StaffMember } from '../models/request.model';
+import { AdminRequestDetail, AdminRequestRow, RequestStatus, StaffMember } from '../models/request.model';
 import { Department } from '../models/user.model';
 
 // What the manage page passes in. Nullable because the form starts empty.
@@ -28,6 +28,12 @@ export class AdminRequestService {
   async loadQueue(): Promise<AdminRequestRow[]> {
     this.requireAdmin();
     return this.api.getAdminQueue();
+  }
+
+  // Step 8: read-only list of every request. null means no status filter.
+  async loadAll(status: RequestStatus | null = null): Promise<AdminRequestRow[]> {
+    this.requireAdmin();
+    return this.api.getAllRequests(status);
   }
 
   async loadDetail(id: number): Promise<AdminRequestDetail> {

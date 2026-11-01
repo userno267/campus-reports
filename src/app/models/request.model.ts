@@ -74,12 +74,21 @@ export interface RequestEvent {
   changed_at: string;
 }
 
+// The faculty rating for one request, as the admin sees it (Step 8).
+export interface RequestReview {
+  rating: number;                       // 1 to 5
+  comment: string | null;
+  reviewer_name: string;                // the faculty member who rated
+  created_at: string;
+}
+
 // The detail view: the queue row plus both photos, the proof note, and the timeline.
 export interface AdminRequestDetail extends AdminRequestRow {
   before_photo: string;                 // raw base64
   after_photo: string | null;           // set when staff send proof (Step 5)
   proof_note: string | null;            // set when staff send proof (Step 5)
   events: RequestEvent[];
+  review?: RequestReview | null;        // Step 8: null until the faculty member rates it
 }
 
 // A staff member as the assign screen sees them.

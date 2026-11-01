@@ -176,7 +176,34 @@ if ($method === 'GET' && $action === 'queue') {
     sendResponse(['requests' => $stmt->fetchAll()], 200);
 }
 
-// ---------- GET detail: one request with photos and timeline (admin only) ----------
+// ---------- GET all: every request in any status, read-only list (admin only) ----------
+// Step 8. Optional ?status=... filter. No photos in the list. Newest first.
+if ($method === 'GET' && $action === 'all') {
+    requireUser($conn, ['admin']);
+
+    $validStatuses = ['submitted', 'assigned', 'in_progress', 'awaiting_proof', 'completed', 'cancelled'];
+    $status = $_GET['status'] ?? '';
+
+    $sql    = "SELECT $adminColumns $adminFrom";
+    $params = [];
+    if ($status !== '') {
+        // An unknown value (or ?status[]=x, which PHP turns into an array) is a 400.
+        if (!is_string($status) || !in_array($status, $validStatuses, true)) {
+            sendResponse(['error' => 'Invalid status filter'], 400);
+        }
+        // The value is bound, never pasted into the SQL.
+        $sql .= ' WHERE r.status = ?';
+        $params[] = $status;
+    }
+    $sql .= ' ORDER BY r.created_at DESC, r.id DESC';
+
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
+
+    sendResponse(['requests' => $stmt->fetchAll()], 200);
+}
+
+// ---------- GET detail: one request with photos, timeline and review (admin only) ----------
 if ($method === 'GET' && $action === 'detail') {
     requireUser($conn, ['admin']);
 
@@ -209,6 +236,21 @@ if ($method === 'GET' && $action === 'detail') {
     SQL);
     $events->execute([(int) $id]);
     $request['events'] = $events->fetchAll();
+
+    // Step 8: the faculty rating for this request, or null when it has not been rated.
+    // The UNIQUE request_id means there is at most one row.
+    $reviewStmt = $conn->prepare(<<<'SQL'
+        SELECT rv.rating,
+               rv.comment,
+               f.name AS reviewer_name,
+               to_char(rv.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+        FROM reviews rv
+        JOIN users f ON f.id = rv.created_by
+        WHERE rv.request_id = ?
+    SQL);
+    $reviewStmt->execute([(int) $id]);
+    $review = $reviewStmt->fetch();           // false when there is no row
+    $request['review'] = $review ?: null;
 
     sendResponse(['request' => $request], 200);
 }
@@ -401,7 +443,7 @@ if ($method === 'POST' && $action === 'complete') {
 }
 
 // A known action sent with the wrong HTTP method gets 405. Anything else is unknown.
-$knownActions = ['create', 'mine', 'queue', 'detail', 'assign', 'cancel', 'complete'];
+$knownActions = ['create', 'mine', 'queue', 'all', 'detail', 'assign', 'cancel', 'complete'];
 if (in_array($action, $knownActions, true)) {
     sendResponse(['error' => 'Method not allowed'], 405);
 }

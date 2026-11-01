@@ -35,7 +35,12 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/my-reports.page').then((m) => m.MyReportsPage),
       },
 
-      { path: 'dashboard', canActivate: [roleGuard('admin')], data: { title: 'Dashboard' }, loadComponent: placeholder },
+      // Step 8: read-only list of all requests. The path stays 'dashboard' so ROLE_HOME does not change.
+      {
+        path: 'dashboard',
+        canActivate: [roleGuard('admin')],
+        loadComponent: () => import('./pages/all-requests.page').then((m) => m.AllRequestsPage),
+      },
       {
         path: 'manage-reports',
         canActivate: [roleGuard('admin')],

@@ -6,7 +6,7 @@ import {
   addCircleOutline,
   documentsOutline,
   personCircleOutline,
-  speedometerOutline,
+  listOutline,
   settingsOutline,
   clipboardOutline,
   peopleOutline,
@@ -51,8 +51,8 @@ import { AuthService } from '../services/auth.service';
 
           @case ('admin') {
             <ion-tab-button tab="dashboard">
-              <ion-icon name="speedometer-outline"></ion-icon>
-              <ion-label>Dashboard</ion-label>
+              <ion-icon name="list-outline"></ion-icon>
+              <ion-label>Requests</ion-label>
             </ion-tab-button>
 
             <ion-tab-button tab="manage-reports">
@@ -178,7 +178,7 @@ export class TabsPage {
       addCircleOutline,
       documentsOutline,
       personCircleOutline,
-      speedometerOutline,
+      listOutline,
       settingsOutline,
       clipboardOutline,
       peopleOutline,
