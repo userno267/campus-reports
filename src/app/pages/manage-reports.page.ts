@@ -8,9 +8,11 @@ import {
 import { AdminRequestService } from '../services/admin-request.service';
 import { FeedbackService } from '../services/feedback.service';
 import {
-  AdminRequestDetail, AdminRequestRow, RequestStatus, StaffMember,
+  AdminRequestDetail, AdminRequestRow, RequestPriority, RequestStatus, StaffMember,
 } from '../models/request.model';
 import { Department } from '../models/user.model';
+import { PriorityBadgeComponent } from '../components/priority-badge.component';
+import { PRIORITY_CHOICES } from '../utils/priority.util';
 
 // Friendly labels and badge colours for each status (same as My Reports).
 const STATUS_LABELS: Record<RequestStatus, string> = {
@@ -35,6 +37,7 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
 interface AssignForm {
   department_id: number | null;
   staff_id: number | null;
+  priority: RequestPriority | null;
   remark: string;
 }
 
@@ -49,6 +52,7 @@ interface AssignForm {
     DatePipe, FormsModule,
     IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonItem, IonLabel,
     IonList, IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
+    PriorityBadgeComponent,
   ],
   template: `
     <ion-header class="ion-no-border">
@@ -84,9 +88,12 @@ interface AssignForm {
                     }
                   </p>
                 </ion-label>
-                <ion-badge slot="end" [color]="statusColor(r.status)">
-                  {{ statusLabel(r.status) }}
-                </ion-badge>
+                <div slot="end" class="badges">
+                  <app-priority-badge [priority]="r.priority" />
+                  <ion-badge [color]="statusColor(r.status)">
+                    {{ statusLabel(r.status) }}
+                  </ion-badge>
+                </div>
               </ion-item>
             }
           </ion-list>
@@ -108,6 +115,9 @@ interface AssignForm {
               · Department: {{ selected.department_name }}
             }
           </p>
+          @if (selected.priority) {
+            <p class="meta">Priority: <app-priority-badge [priority]="selected.priority" /></p>
+          }
         </div>
 
         <img class="before-photo"
@@ -190,6 +200,16 @@ interface AssignForm {
             </ion-item>
 
             <ion-item>
+              <ion-select label="Priority" labelPlacement="stacked" interface="popover"
+                          placeholder="Choose a priority"
+                          [(ngModel)]="form.priority">
+                @for (p of priorityChoices; track p.value) {
+                  <ion-select-option [value]="p.value">{{ p.label }}</ion-select-option>
+                }
+              </ion-select>
+            </ion-item>
+
+            <ion-item>
               <ion-textarea label="Remark (optional)" labelPlacement="stacked" [autoGrow]="true"
                             maxlength="300" placeholder="For example: please come before 2 pm"
                             [(ngModel)]="form.remark"></ion-textarea>
@@ -197,7 +217,7 @@ interface AssignForm {
           </ion-list>
 
           <ion-button expand="block" class="action-btn ion-margin-top"
-                      [disabled]="busy || !form.department_id || !form.staff_id"
+                      [disabled]="busy || !form.department_id || !form.staff_id || !form.priority"
                       (click)="submitAssign()">
             {{ busy ? 'Saving...' : (selected.status === 'assigned' ? 'Reassign' : 'Assign') }}
           </ion-button>
@@ -276,6 +296,13 @@ interface AssignForm {
       text-align: center;
     }
 
+    .badges {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+    }
+
     .detail-card {
       background: #fbfaf5;
       border: 1px solid #e2e8dc;
@@ -325,9 +352,10 @@ export class ManageReportsPage implements OnInit {
   departments: Department[] = [];
   allStaff: StaffMember[] = [];
   selected: AdminRequestDetail | null = null;
- form: AssignForm = { department_id: null, staff_id: null, remark: '' };
-   rejectRemark = ''; 
- loading = false;
+  form: AssignForm = { department_id: null, staff_id: null, priority: null, remark: '' };
+  rejectRemark = '';
+  readonly priorityChoices = PRIORITY_CHOICES;
+  loading = false;
   busy = false;
 
   // Departments rarely change, so load them once when the page is created.
@@ -378,9 +406,10 @@ export class ManageReportsPage implements OnInit {
       await this.loadStaff();
       this.selected = detail;
       this.rejectRemark = '';
-            this.form = {
+      this.form = {
         department_id: detail.department_id ?? detail.suggested_department_id,
         staff_id: detail.assigned_to,
+        priority: detail.priority,   // empty for a new request, current value for a reassign
         remark: '',
       };
     } catch (e: any) {
@@ -424,6 +453,7 @@ export class ManageReportsPage implements OnInit {
         request_id: this.selected.id,
         department_id: this.form.department_id,
         staff_id: this.form.staff_id,
+        priority: this.form.priority,
         remark: this.form.remark.trim(),
       });
       await this.feedback.toast('Request assigned.', 'success');

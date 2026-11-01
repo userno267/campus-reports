@@ -48,6 +48,9 @@ CREATE TABLE requests (
     before_photo  TEXT NOT NULL,                        -- base64
     after_photo   TEXT,                                 -- base64, uploaded by staff
     proof_note    TEXT,
+    -- Label only (no deadlines, no timers). Set by the admin when assigning.
+    -- NULL for requests that were never assigned.
+    priority      VARCHAR(10) CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
     status        VARCHAR(20) NOT NULL DEFAULT 'submitted'
                   CHECK (status IN ('submitted', 'assigned', 'in_progress',
                                     'awaiting_proof', 'completed', 'cancelled')),

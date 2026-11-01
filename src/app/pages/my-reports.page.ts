@@ -1,13 +1,15 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';import {
+import { Router } from '@angular/router';
+import {
   IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonItem,
   IonLabel, IonList, IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
 } from '@ionic/angular';
 import { RequestStatus, RequestSummary } from '../models/request.model';
 import { RequestService } from '../services/request.service';
 import { FeedbackService } from '../services/feedback.service';
+import { PriorityBadgeComponent } from '../components/priority-badge.component';
 
 // Friendly labels and badge colours for each status.
 const STATUS_LABELS: Record<RequestStatus, string> = {
@@ -47,6 +49,7 @@ const RATING_CHOICES = [
     CommonModule, DatePipe, FormsModule,
     IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonItem,
     IonLabel, IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
+    PriorityBadgeComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -63,7 +66,8 @@ const RATING_CHOICES = [
       @if (requests.length > 0) {
         @for (r of requests; track r.id) {
           <div class="request-card">
-<ion-item lines="none" class="request-row" button detail="true" (click)="openDetails(r.id)">              <ion-label class="ion-text-wrap">
+<ion-item lines="none" class="request-row" button detail="true" (click)="openDetails(r.id)">
+              <ion-label class="ion-text-wrap">
                 <h2>{{ r.title }}</h2>
                 <p>{{ r.category_name }} · {{ r.location_name }}</p>
                 <p class="meta">Reported {{ r.created_at | date: 'mediumDate' }}</p>
@@ -71,9 +75,12 @@ const RATING_CHOICES = [
                   <p class="meta">Done by {{ r.staff_name }}</p>
                 }
               </ion-label>
-              <ion-badge slot="end" [color]="statusColor(r.status)">
-                {{ statusLabel(r.status) }}
-              </ion-badge>
+              <div slot="end" class="badges">
+                <app-priority-badge [priority]="r.priority" />
+                <ion-badge [color]="statusColor(r.status)">
+                  {{ statusLabel(r.status) }}
+                </ion-badge>
+              </div>
             </ion-item>
 
             @if (r.status === 'completed') {
@@ -146,6 +153,12 @@ const RATING_CHOICES = [
     .meta {
       color: #87958a;
       font-size: 13px;
+    }
+    .badges {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
     }
     .note {
       padding: 0 16px;

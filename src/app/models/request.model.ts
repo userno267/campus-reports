@@ -9,6 +9,10 @@ export type RequestStatus =
   | 'completed'
   | 'cancelled';
 
+// Priority is only a label set by the admin when assigning. Matches the CHECK in init.sql.
+// null means the request has not been assigned yet (or was assigned before priority existed).
+export type RequestPriority = 'low' | 'medium' | 'high' | 'urgent';
+
 // A campus location (Room 101, Library, ...). Faculty pick one from a list.
 export interface CampusLocation {
   id: number;
@@ -31,6 +35,7 @@ export interface RequestSummary {
   category_name: string;
   location_name: string;
   status: RequestStatus;
+  priority: RequestPriority | null;     // Feature 3: set by the admin at assign time
   staff_name: string | null;            // Step 6: only set when the request is completed
   has_review: boolean;                  // Step 6: true once the faculty member has rated it
   review_rating: number | null;         // Step 6: 1 to 5, or null when not rated
@@ -55,6 +60,7 @@ export interface AdminRequestRow {
   title: string;
   description: string;
   status: RequestStatus;
+  priority: RequestPriority | null;     // Feature 3
   category_name: string;
   location_name: string;
   suggested_department_id: number;      // from the category default
@@ -107,6 +113,7 @@ export interface AssignRequestPayload {
   request_id: number;
   department_id: number;
   staff_id: number;
+  priority: RequestPriority;            // Feature 3: required
   remark: string;                       // empty string when none
 }
 
@@ -124,6 +131,7 @@ export interface StaffJob {
   title: string;
   description: string;
   status: RequestStatus;
+  priority: RequestPriority | null;     // Feature 3
   category_name: string;
   location_name: string;
   before_photo: string;                 // raw base64

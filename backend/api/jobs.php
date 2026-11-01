@@ -13,6 +13,7 @@ $jobColumns = <<<SQL
     r.title,
     r.description,
     r.status,
+    r.priority,
     c.name AS category_name,
     l.name AS location_name,
     r.before_photo,
@@ -27,7 +28,8 @@ $jobColumns = <<<SQL
         WHERE e.request_id = r.id AND e.status = 'in_progress'
         ORDER BY e.id DESC
         LIMIT 1
-    ) END AS rejected_remark,    to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+    ) END AS rejected_remark,
+    to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
     to_char(r.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
 SQL;
 

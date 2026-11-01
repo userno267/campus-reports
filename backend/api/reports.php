@@ -12,6 +12,7 @@ $requestColumns = <<<SQL
     r.title,
     r.description,
     r.status,
+    r.priority,
     c.name AS category_name,
     l.name AS location_name,
     CASE WHEN r.status = 'completed' THEN s.name END AS staff_name,
@@ -28,6 +29,7 @@ $adminColumns = <<<SQL
     r.title,
     r.description,
     r.status,
+    r.priority,
     c.name AS category_name,
     c.default_department_id AS suggested_department_id,
     l.name AS location_name,
@@ -163,10 +165,20 @@ if ($method === 'GET' && $action === 'queue') {
     // submitted = needs a department and staff. assigned = can still be reassigned or cancelled.
     // awaiting_proof = staff sent proof, the admin must review it and mark completed.
     // Proof requests are listed first because someone is waiting on them.
+    // Then priority, urgent to low. Requests without a priority (not assigned yet) come after
+    // the ones that have one. Inside each group, newest first (the old order).
     $stmt = $conn->prepare(
         "SELECT $adminColumns $adminFrom
          WHERE r.status IN ('submitted', 'assigned', 'awaiting_proof')
-         ORDER BY (r.status = 'awaiting_proof') DESC, r.created_at DESC"
+         ORDER BY (r.status = 'awaiting_proof') DESC,
+                  CASE r.priority
+                      WHEN 'urgent' THEN 1
+                      WHEN 'high'   THEN 2
+                      WHEN 'medium' THEN 3
+                      WHEN 'low'    THEN 4
+                      ELSE 5
+                  END,
+                  r.created_at DESC, r.id DESC"
     );
     $stmt->execute();
 
@@ -258,9 +270,14 @@ if ($method === 'POST' && $action === 'assign') {
     $departmentId = positiveInt($data['department_id'] ?? null, 'Choose a department and a staff member');
     $staffId      = positiveInt($data['staff_id'] ?? null, 'Choose a department and a staff member');
     $remark       = textField($data, 'remark');
+    $priority     = textField($data, 'priority');
 
     if (mb_strlen($remark) > 300) {
         sendResponse(['error' => 'Remark must be 300 characters or less'], 400);
+    }
+    // Priority is a required label at assign time. Only these four values exist.
+    if (!in_array($priority, ['low', 'medium', 'high', 'urgent'], true)) {
+        sendResponse(['error' => 'Choose a priority'], 400);
     }
 
     $conn->beginTransaction();
@@ -307,10 +324,10 @@ if ($method === 'POST' && $action === 'assign') {
 
         $update = $conn->prepare(
             "UPDATE requests
-             SET department_id = ?, assigned_to = ?, status = 'assigned', updated_at = now()
+             SET department_id = ?, assigned_to = ?, priority = ?, status = 'assigned', updated_at = now()
              WHERE id = ?"
         );
-        $update->execute([$departmentId, $staffId, $requestId]);
+        $update->execute([$departmentId, $staffId, $priority, $requestId]);
 
         // Timeline row. The default remark says whether this was a first assignment or a reassignment.
         $defaultRemark = $current['status'] === 'assigned' ? 'Reassigned to staff' : 'Assigned to staff';
@@ -523,7 +540,8 @@ if ($method === 'GET' && $action === 'my_detail') {
     sendResponse(['request' => $request], 200);
 }
 // A known action sent with the wrong HTTP method gets 405. Anything else is unknown.
-$knownActions = ['create', 'mine', 'queue', 'all', 'detail', 'assign', 'cancel', 'complete', 'reject_proof', 'my_detail'];if (in_array($action, $knownActions, true)) {
+$knownActions = ['create', 'mine', 'queue', 'all', 'detail', 'assign', 'cancel', 'complete', 'reject_proof', 'my_detail'];
+if (in_array($action, $knownActions, true)) {
     sendResponse(['error' => 'Method not allowed'], 405);
 }
 sendResponse(['error' => 'Invalid action'], 400);

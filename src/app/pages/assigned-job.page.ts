@@ -9,6 +9,7 @@ import { RequestStatus, StaffJob } from '../models/request.model';
 import { StaffJobService } from '../services/staff-job.service';
 import { FeedbackService } from '../services/feedback.service';
 import { resizeImageToBase64 } from '../utils/photo.util';
+import { PriorityBadgeComponent } from '../components/priority-badge.component';
 
 // Staff-facing labels and badge colours for each status.
 const STATUS_LABELS: Record<RequestStatus, string> = {
@@ -39,6 +40,7 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
     DatePipe, FormsModule,
     IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonItem,
     IonList, IonTextarea, IonTitle, IonToolbar,
+    PriorityBadgeComponent,
   ],
   template: `
     <ion-header class="ion-no-border">
@@ -56,7 +58,10 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
         <div class="job-card">
           <div class="job-head">
             <h2 class="job-title">{{ job.title }}</h2>
-            <ion-badge [color]="statusColor(job.status)">{{ statusLabel(job.status) }}</ion-badge>
+            <div class="badges">
+              <app-priority-badge [priority]="job.priority" />
+              <ion-badge [color]="statusColor(job.status)">{{ statusLabel(job.status) }}</ion-badge>
+            </div>
           </div>
           <p class="meta">
             {{ job.category_name }} · {{ job.location_name }} ·
@@ -87,7 +92,8 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
               </div>
             }
 
-            <h3 class="section-title">Proof of completed work</h3>            <p class="meta">Take a photo of the finished work, add an optional note, then send it to the admin.</p>
+            <h3 class="section-title">Proof of completed work</h3>
+            <p class="meta">Take a photo of the finished work, add an optional note, then send it to the admin.</p>
 
             <input class="file-input" type="file" accept="image/*" capture="environment"
                    (change)="onPhotoPicked($event)" />
@@ -158,6 +164,13 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+    }
+
+    .badges {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
     }
 
     .job-title {

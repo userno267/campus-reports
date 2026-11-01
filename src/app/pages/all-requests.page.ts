@@ -8,6 +8,7 @@ import {
 import { AdminRequestService } from '../services/admin-request.service';
 import { FeedbackService } from '../services/feedback.service';
 import { AdminRequestDetail, AdminRequestRow, RequestStatus } from '../models/request.model';
+import { PriorityBadgeComponent } from '../components/priority-badge.component';
 
 // Friendly labels and badge colours (same as the Manage page).
 const STATUS_LABELS: Record<RequestStatus, string> = {
@@ -44,6 +45,7 @@ const STATUS_ORDER: RequestStatus[] = [
     DatePipe, FormsModule,
     IonBadge, IonButton, IonButtons, IonContent, IonHeader, IonItem, IonLabel,
     IonList, IonSelect, IonSelectOption, IonTitle, IonToolbar,
+    PriorityBadgeComponent,
   ],
   template: `
     <ion-header class="ion-no-border">
@@ -93,9 +95,12 @@ const STATUS_ORDER: RequestStatus[] = [
                     · {{ r.created_at | date: 'mediumDate' }}
                   </p>
                 </ion-label>
-                <ion-badge slot="end" [color]="statusColor(r.status)">
-                  {{ statusLabel(r.status) }}
-                </ion-badge>
+                <div slot="end" class="badges">
+                  <app-priority-badge [priority]="r.priority" />
+                  <ion-badge [color]="statusColor(r.status)">
+                    {{ statusLabel(r.status) }}
+                  </ion-badge>
+                </div>
               </ion-item>
             }
           </ion-list>
@@ -122,6 +127,9 @@ const STATUS_ORDER: RequestStatus[] = [
               · Staff: {{ selected.assigned_name }}
             }
           </p>
+          @if (selected.priority) {
+            <p class="meta">Priority: <app-priority-badge [priority]="selected.priority" /></p>
+          }
         </div>
 
         <img class="photo"
@@ -248,6 +256,13 @@ const STATUS_ORDER: RequestStatus[] = [
     .detail-text {
       color: #29483d;
       margin: 8px 0 4px;
+    }
+
+    .badges {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
     }
 
     .photo {

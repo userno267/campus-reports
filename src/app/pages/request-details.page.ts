@@ -9,6 +9,7 @@ import { FacultyRequestDetail, RequestStatus } from '../models/request.model';
 import { RequestService } from '../services/request.service';
 import { FeedbackService } from '../services/feedback.service';
 import { RequestPhotoComponent } from '../components/request-photo.component';
+import { PriorityBadgeComponent } from '../components/priority-badge.component';
 
 // Same labels and colours as My Reports.
 const STATUS_LABELS: Record<RequestStatus, string> = {
@@ -39,6 +40,7 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
     IonBackButton, IonBadge, IonButtons, IonContent, IonHeader, IonItem,
     IonLabel, IonList, IonTitle, IonToolbar,
     RequestPhotoComponent,
+    PriorityBadgeComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -57,7 +59,10 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
         <div class="card">
           <div class="head">
             <h2 class="title">{{ r.title }}</h2>
-            <ion-badge [color]="statusColor(r.status)">{{ statusLabel(r.status) }}</ion-badge>
+            <div class="badges">
+              <app-priority-badge [priority]="r.priority" />
+              <ion-badge [color]="statusColor(r.status)">{{ statusLabel(r.status) }}</ion-badge>
+            </div>
           </div>
           <p class="meta">
             {{ r.category_name }} · {{ r.location_name }} · Reported {{ r.created_at | date: 'mediumDate' }}
@@ -164,6 +169,13 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+    }
+
+    .badges {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
     }
 
     .title {

@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { ApiService } from './api.service';
 import { AuthService } from './auth.service';
-import { AdminRequestDetail, AdminRequestRow, RequestStatus, StaffMember } from '../models/request.model';
+import { AdminRequestDetail, AdminRequestRow, RequestPriority, RequestStatus, StaffMember } from '../models/request.model';
 import { Department } from '../models/user.model';
 
 // What the manage page passes in. Nullable because the form starts empty.
@@ -9,6 +9,7 @@ export interface AssignInput {
   request_id: number;
   department_id: number | null;
   staff_id: number | null;
+  priority: RequestPriority | null;
   remark: string;
 }
 
@@ -54,11 +55,13 @@ export class AdminRequestService {
     this.requireAdmin();
     if (input.department_id === null) throw new Error('Please choose a department.');
     if (input.staff_id === null) throw new Error('Please choose a staff member.');
+    if (input.priority === null) throw new Error('Please choose a priority.');
 
     await this.api.assignRequest({
       request_id: input.request_id,
       department_id: input.department_id,
       staff_id: input.staff_id,
+      priority: input.priority,
       remark: input.remark,
     });
   }
