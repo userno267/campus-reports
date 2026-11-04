@@ -128,6 +128,11 @@ interface AssignForm {
         <!-- Where the problem is. Free map (C3). Staff positions are never shown here. -->
         <div class="detail-card ion-margin-top">
           <h3 class="detail-title">Problem location</h3>
+          <p class="meta">
+            <strong>Taken at:</strong>
+            {{ selected.photo_taken_at ? (selected.photo_taken_at | date: 'medium') : 'Time not recorded' }}
+            · <strong>Location:</strong> {{ formatCoords(selected.latitude, selected.longitude) }}
+          </p>
           <app-location-map [problemLat]="selected.latitude" [problemLng]="selected.longitude" />
         </div>
 
@@ -143,6 +148,11 @@ interface AssignForm {
             } @else {
               <p class="meta">No note.</p>
             }
+            <p class="meta">
+              <strong>Taken at:</strong>
+              {{ selected.after_photo_taken_at ? (selected.after_photo_taken_at | date: 'medium') : 'Time not recorded' }}
+              · <strong>Location:</strong> {{ formatCoords(selected.after_latitude, selected.after_longitude) }}
+            </p>
           </div>
           <img class="before-photo"
                [src]="'data:image/jpeg;base64,' + selected.after_photo"
@@ -591,6 +601,14 @@ export class ManageReportsPage implements OnInit {
 
   departmentName(id: number): string {
     return this.departments.find((d) => d.id === id)?.name ?? '—';
+  }
+
+  // "10.52340, 118.91230", or a plain message when the device gave no location.
+  formatCoords(lat: number | null, lng: number | null): string {
+    if (lat === null || lng === null) {
+      return 'Location not recorded';
+    }
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   }
 
   statusLabel(status: RequestStatus): string {

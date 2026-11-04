@@ -49,12 +49,16 @@ $adminFrom = '
     LEFT JOIN users       u ON u.id = r.assigned_to
 ';
 
-// GPS fix and photo time (Feature 4). Only the detail views add these; lists do not need them.
+// GPS fix and photo time (Feature 4), for the problem photo and (B2) for the proof photo.
+// Only the detail views add these; lists do not need them.
 // No leading or trailing comma: the query adds one before it.
 $photoMetaColumns = <<<SQL
     r.latitude,
     r.longitude,
-    to_char(r.photo_taken_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS photo_taken_at
+    to_char(r.photo_taken_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS photo_taken_at,
+    r.after_latitude,
+    r.after_longitude,
+    to_char(r.after_photo_taken_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS after_photo_taken_at
 SQL;
 
 // Stop with an error after undoing the open transaction.

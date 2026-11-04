@@ -101,6 +101,9 @@ export interface AdminRequestDetail extends AdminRequestRow {
   latitude: number | null;              // Feature 4
   longitude: number | null;             // Feature 4
   photo_taken_at: string | null;        // Feature 4
+  after_latitude: number | null;        // B2: where the proof photo was taken
+  after_longitude: number | null;       // B2
+  after_photo_taken_at: string | null;  // B2: when the proof photo was taken (ISO UTC)
   events: RequestEvent[];
   review?: RequestReview | null;        // Step 8: null until the faculty member rates it
 }
@@ -200,6 +203,9 @@ export interface FacultyRequestDetail extends RequestSummary {
   latitude: number | null;              // Feature 4
   longitude: number | null;             // Feature 4
   photo_taken_at: string | null;        // Feature 4
+  after_latitude: number | null;        // B2: where the proof photo was taken
+  after_longitude: number | null;       // B2
+  after_photo_taken_at: string | null;  // B2: when the proof photo was taken (ISO UTC)
   events: RequestEvent[];
   review: FacultyReview | null;         // null until the faculty member rates it
 }

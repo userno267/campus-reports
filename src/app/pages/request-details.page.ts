@@ -77,6 +77,12 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
         <div class="card">
           <h3 class="section">Problem photo</h3>
           <app-request-photo [base64]="r.before_photo" alt="Problem photo" />
+          <p class="meta">
+            <strong>Taken at:</strong> {{ r.photo_taken_at ? (r.photo_taken_at | date: 'medium') : 'Time not recorded' }}
+          </p>
+          <p class="meta">
+            <strong>Location:</strong> {{ formatCoords(r.latitude, r.longitude) }}
+          </p>
         </div>
 
         <!-- Proof from staff, once they have sent it -->
@@ -84,6 +90,12 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
           <div class="card">
             <h3 class="section">Proof of completed work</h3>
             <app-request-photo [base64]="afterPhoto" alt="Proof photo" />
+            <p class="meta">
+              <strong>Taken at:</strong> {{ r.after_photo_taken_at ? (r.after_photo_taken_at | date: 'medium') : 'Time not recorded' }}
+            </p>
+            <p class="meta">
+              <strong>Location:</strong> {{ formatCoords(r.after_latitude, r.after_longitude) }}
+            </p>
             @if (r.proof_note) {
               <p class="text"><strong>Staff note:</strong> {{ r.proof_note }}</p>
             }
@@ -254,6 +266,14 @@ export class RequestDetailsPage {
       this.loading = false;
       this.cdr.markForCheck();
     }
+  }
+
+  // "10.52340, 118.91230", or a plain message when the device gave no location.
+  formatCoords(lat: number | null, lng: number | null): string {
+    if (lat === null || lng === null) {
+      return 'Location not recorded';
+    }
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
   }
 
   statusLabel(status: RequestStatus): string {

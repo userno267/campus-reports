@@ -12,7 +12,9 @@ import { CampusLocation, RequestCategory } from '../models/request.model';
 import { NewRequestForm, RequestService } from '../services/request.service';
 import { FeedbackService } from '../services/feedback.service';
 import { DeviceService, GpsStatus, PhotoSource } from '../services/device.service';
-import { resizeDataUrlToBase64, resizeImageToBase64 } from '../utils/photo.util';
+import {
+  WORKING_QUALITY, resizeDataUrlToBase64, resizeImageToBase64, stampPhoto,
+} from '../utils/photo.util';
 
 // 'idle' = not asked yet, 'loading' = waiting for the device.
 type GpsState = 'idle' | 'loading' | GpsStatus;
@@ -95,8 +97,8 @@ type GpsState = 'idle' | 'loading' | GpsStatus;
         </ion-button>
       </div>
 
-      <ion-button expand="block" class="ion-margin-top" [disabled]="busy" (click)="submit()">
-        {{ busy ? 'Working...' : 'Submit Report' }}
+      <ion-button expand="block" class="ion-margin-top" [disabled]="busy || stamping" (click)="submit()">
+        {{ busy ? 'Working...' : (stamping ? 'Adding stamp...' : 'Submit Report') }}
       </ion-button>
     </ion-content>
   `,
@@ -140,9 +142,15 @@ export class NewReportPage implements OnInit {
   locationId: number | null = null;
   description = '';
 
-  photoBase64: string | null = null;   // raw base64, sent to the server
-  photoPreview: string | null = null;  // data URL, only for the <img> preview
+  photoRaw: string | null = null;      // resized photo WITHOUT the stamp. The stamp is always drawn from this one.
+  photoBase64: string | null = null;   // stamped photo, raw base64, sent to the server
+  photoPreview: string | null = null;  // data URL of the stamped photo, only for the <img> preview
   photoTakenAt: string | null = null;  // ISO UTC time the photo was taken (or picked in the browser)
+
+  // Feature 5: the stamp is redrawn when the GPS result changes. stampSeq makes sure
+  // that only the newest drawing is kept if two of them overlap.
+  stamping = false;
+  private stampSeq = 0;
 
   gpsState: GpsState = 'idle';
   latitude: number | null = null;
@@ -209,6 +217,9 @@ export class NewReportPage implements OnInit {
     }
     this.cdr.markForCheck();
 
+    // The photo may already be chosen. Redraw its stamp with the new GPS result.
+    await this.applyStamp();
+
     if (showMessage && result.status !== 'granted') {
       await this.feedback.toast(this.gpsText);
     }
@@ -231,8 +242,8 @@ export class NewReportPage implements OnInit {
     try {
       const pick = await this.device.pickPhotoNative(source);
       if (!pick) return;   // the user cancelled
-      const base64 = await resizeDataUrlToBase64(pick.dataUrl);
-      this.setPhoto(base64, pick.takenAt);
+      const base64 = await resizeDataUrlToBase64(pick.dataUrl, 1280, WORKING_QUALITY);
+      await this.setPhoto(base64, pick.takenAt);
     } catch (e: any) {
       await this.feedback.toast(e.message ?? 'Could not add the photo.');
     } finally {
@@ -253,8 +264,8 @@ export class NewReportPage implements OnInit {
     this.busy = true;
     this.cdr.markForCheck();
     try {
-      const base64 = await resizeImageToBase64(file);
-      this.setPhoto(base64, takenAt);
+      const base64 = await resizeImageToBase64(file, 1280, WORKING_QUALITY);
+      await this.setPhoto(base64, takenAt);
     } catch (e: any) {
       await this.feedback.toast(e.message ?? 'Could not read that photo.');
     } finally {
@@ -263,14 +274,45 @@ export class NewReportPage implements OnInit {
     }
   }
 
-  private setPhoto(base64: string, takenAt: string) {
-    this.photoBase64 = base64;
-    this.photoPreview = 'data:image/jpeg;base64,' + base64;
+  private async setPhoto(raw: string, takenAt: string) {
+    this.photoRaw = raw;
     this.photoTakenAt = takenAt;
+    await this.applyStamp();
+  }
+
+  // Feature 5: draws the stamp (coordinates and time) on the photo.
+  // It always starts from photoRaw, so the strip is never added twice.
+  // Called when a photo is chosen, and again when the GPS result changes.
+  private async applyStamp() {
+    const raw = this.photoRaw;
+    if (!raw) return;
+
+    const seq = ++this.stampSeq;
+    this.stamping = true;
     this.cdr.markForCheck();
+    try {
+      const stamped = await stampPhoto(raw, this.photoTakenAt, this.latitude, this.longitude);
+      if (seq !== this.stampSeq) return;   // a newer stamp is already running
+      this.photoBase64 = stamped;
+      this.photoPreview = 'data:image/jpeg;base64,' + stamped;
+    } catch (e: any) {
+      if (seq !== this.stampSeq) return;
+      // Remove the photo, so a photo with a wrong or missing stamp is never sent.
+      this.photoRaw = null;
+      this.photoBase64 = null;
+      this.photoPreview = null;
+      this.photoTakenAt = null;
+      await this.feedback.toast(e.message ?? 'Could not add the stamp. Please choose the photo again.');
+    } finally {
+      if (seq === this.stampSeq) {
+        this.stamping = false;
+      }
+      this.cdr.markForCheck();
+    }
   }
 
   async submit() {
+    if (this.stamping) return;   // wait until the stamp is drawn
     this.busy = true;
     this.cdr.markForCheck();
     try {
@@ -303,6 +345,9 @@ export class NewReportPage implements OnInit {
     this.categoryId = null;
     this.locationId = null;
     this.description = '';
+    this.stampSeq++;              // cancels any stamp that is still being drawn
+    this.stamping = false;
+    this.photoRaw = null;
     this.photoBase64 = null;
     this.photoPreview = null;
     this.photoTakenAt = null;

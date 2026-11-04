@@ -9,7 +9,9 @@ import { RequestStatus, StaffJob } from '../models/request.model';
 import { StaffJobService } from '../services/staff-job.service';
 import { FeedbackService } from '../services/feedback.service';
 import { DeviceService, GpsStatus, PhotoSource } from '../services/device.service';
-import { resizeDataUrlToBase64, resizeImageToBase64 } from '../utils/photo.util';
+import {
+  WORKING_QUALITY, resizeDataUrlToBase64, resizeImageToBase64, stampPhoto,
+} from '../utils/photo.util';
 import { PriorityBadgeComponent } from '../components/priority-badge.component';
 import { LocationMapComponent } from '../components/location-map.component';
 
@@ -354,8 +356,9 @@ export class AssignedJobPage {
   busy = false;
 
   // The proof the staff member is preparing. Cleared after it is sent.
-  afterPhoto: string | null = null;    // raw base64 for the API
-  previewSrc: string | null = null;    // data URL for the preview image
+  afterPhotoRaw: string | null = null; // resized photo WITHOUT the stamp. The stamp is always drawn from this one.
+  afterPhoto: string | null = null;    // stamped photo, raw base64 for the API
+  previewSrc: string | null = null;    // data URL of the stamped photo, for the preview image
   proofTakenAt: string | null = null;  // ISO UTC: when the photo was taken (or picked in the browser)
   note = '';
 
@@ -363,6 +366,11 @@ export class AssignedJobPage {
   gpsState: GpsState = 'idle';
   proofLatitude: number | null = null;
   proofLongitude: number | null = null;
+
+  // Feature 5: the stamp is redrawn when the GPS result changes. stampSeq makes sure
+  // that only the newest drawing is kept if two of them overlap.
+  stamping = false;
+  private stampSeq = 0;
 
   // The staff member's own position, used only to draw the map and the distance.
   // It lives in memory on this screen. It is never sent to the server or saved.
@@ -417,7 +425,8 @@ export class AssignedJobPage {
 
   // Send is allowed only with a photo and a location fix.
   canSendProof(): boolean {
-    return !this.busy && this.afterPhoto !== null && this.proofLatitude !== null && this.proofLongitude !== null;
+    return !this.busy && !this.stamping && this.gpsState !== 'loading'
+      && this.afterPhoto !== null && this.proofLatitude !== null && this.proofLongitude !== null;
   }
 
   // The text shown under "Location of this proof".
@@ -494,9 +503,45 @@ export class AssignedJobPage {
     } else {
       this.proofLatitude = null;
       this.proofLongitude = null;
-      await this.feedback.toast(this.gpsText);
     }
     this.cdr.markForCheck();
+
+    // Redraw the stamp of the chosen photo with the new GPS result.
+    await this.applyStamp();
+
+    if (result.status !== 'granted') {
+      await this.feedback.toast(this.gpsText);
+    }
+  }
+
+  // Feature 5: draws the stamp (coordinates and time) on the proof photo.
+  // It always starts from afterPhotoRaw, so the strip is never added twice.
+  private async applyStamp() {
+    const raw = this.afterPhotoRaw;
+    if (!raw) return;
+
+    const seq = ++this.stampSeq;
+    this.stamping = true;
+    this.cdr.markForCheck();
+    try {
+      const stamped = await stampPhoto(raw, this.proofTakenAt, this.proofLatitude, this.proofLongitude);
+      if (seq !== this.stampSeq) return;   // a newer stamp is already running
+      this.afterPhoto = stamped;
+      this.previewSrc = 'data:image/jpeg;base64,' + stamped;
+    } catch (e: any) {
+      if (seq !== this.stampSeq) return;
+      // Remove the photo, so a photo with a wrong or missing stamp is never sent.
+      this.afterPhotoRaw = null;
+      this.afterPhoto = null;
+      this.previewSrc = null;
+      this.proofTakenAt = null;
+      await this.feedback.toast(e.message ?? 'Could not add the stamp. Please choose the photo again.');
+    } finally {
+      if (seq === this.stampSeq) {
+        this.stamping = false;
+      }
+      this.cdr.markForCheck();
+    }
   }
 
   // Shows "lat, lng" for a stored pair, or a short note when none was recorded.
@@ -527,9 +572,9 @@ export class AssignedJobPage {
     try {
       const pick = await this.device.pickPhotoNative(source);
       if (!pick) return;   // the user cancelled
-      this.afterPhoto = await resizeDataUrlToBase64(pick.dataUrl);
-      this.previewSrc = 'data:image/jpeg;base64,' + this.afterPhoto;
+      this.afterPhotoRaw = await resizeDataUrlToBase64(pick.dataUrl, 1280, WORKING_QUALITY);
       this.proofTakenAt = pick.takenAt;
+      await this.applyStamp();
     } catch (e: any) {
       await this.feedback.toast(e.message ?? 'Could not read that photo. Please try again.');
       return;
@@ -538,7 +583,10 @@ export class AssignedJobPage {
       this.cdr.markForCheck();
     }
     // Get the location for this photo. Runs after the photo is shown, so the screen does not wait.
-    void this.fixLocation();
+    // If the stamp failed, the photo was removed and there is nothing to locate.
+    if (this.afterPhotoRaw) {
+      void this.fixLocation();
+    }
   }
 
   // Browser only: resize the picked file first, so the upload stays small.
@@ -551,9 +599,9 @@ export class AssignedJobPage {
     this.busy = true;
     this.cdr.markForCheck();
     try {
-      this.afterPhoto = await resizeImageToBase64(file);
-      this.previewSrc = 'data:image/jpeg;base64,' + this.afterPhoto;
+      this.afterPhotoRaw = await resizeImageToBase64(file, 1280, WORKING_QUALITY);
       this.proofTakenAt = new Date().toISOString();
+      await this.applyStamp();
     } catch (e: any) {
       await this.feedback.toast('Could not read that photo. Please try again.');
       return;
@@ -563,7 +611,9 @@ export class AssignedJobPage {
       this.busy = false;
       this.cdr.markForCheck();
     }
-    void this.fixLocation();
+    if (this.afterPhotoRaw) {
+      void this.fixLocation();
+    }
   }
 
   async submitProof() {
@@ -588,6 +638,9 @@ export class AssignedJobPage {
   }
 
   private clearProof() {
+    this.stampSeq++;              // cancels any stamp that is still being drawn
+    this.stamping = false;
+    this.afterPhotoRaw = null;
     this.afterPhoto = null;
     this.previewSrc = null;
     this.proofTakenAt = null;
