@@ -20,6 +20,9 @@ import {
   SubmitProofPayload,
 } from '../models/request.model';
 
+// What a screen asks changes.php about (live updates). The server checks the role.
+export type ChangeTarget = 'list' | 'request' | 'job' | 'reviews';
+
 // Exported so the interceptor can tell our API apart from other websites.
 export const API_BASE = environment.apiBase;
 
@@ -252,6 +255,17 @@ export class ApiService {
     } catch (e: any) {
       throw new Error(e.error?.error ?? 'Could not save your rating');
     }
+  }
+
+  // ===== LIVE UPDATES =====
+  // A tiny token that changes whenever the data behind a screen changes. No data, no photos.
+  // Keeps the raw error on purpose: the polling helper ignores errors and tries again later.
+  async checkChanges(target: ChangeTarget, id: number | null = null): Promise<string> {
+    const idPart = id !== null ? `&id=${id}` : '';
+    const response: any = await firstValueFrom(
+      this.http.get(`${API_BASE}/changes.php?action=check&target=${target}${idPart}`)
+    );
+    return String(response.token);
   }
 
   // ===== STAFF REVIEWS (Step 7) =====

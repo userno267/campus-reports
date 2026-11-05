@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, ElementRef, ViewChild, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, OnDestroy, ViewChild, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -8,6 +8,7 @@ import {
 import { RequestStatus, StaffJob } from '../models/request.model';
 import { StaffJobService } from '../services/staff-job.service';
 import { FeedbackService } from '../services/feedback.service';
+import { LiveUpdateService, LiveWatcher } from '../services/live-update.service';
 import { DeviceService, GpsStatus, PhotoSource } from '../services/device.service';
 import {
   WORKING_QUALITY, resizeDataUrlToBase64, resizeImageToBase64, stampPhoto,
@@ -342,11 +343,13 @@ type GpsState = 'idle' | 'loading' | GpsStatus;
     }
   `],
 })
-export class AssignedJobPage {
+export class AssignedJobPage implements OnDestroy {
   private jobService = inject(StaffJobService);
   private feedback = inject(FeedbackService);
   private device = inject(DeviceService);
   private cdr = inject(ChangeDetectorRef);
+  private live = inject(LiveUpdateService);
+  private watcher: LiveWatcher | null = null;
 
   @ViewChild('cameraInput') cameraInput?: ElementRef<HTMLInputElement>;
   @ViewChild('galleryInput') galleryInput?: ElementRef<HTMLInputElement>;
@@ -378,14 +381,35 @@ export class AssignedJobPage {
   staffLat: number | null = null;
   staffLng: number | null = null;
 
-  // Ionic keeps tab pages alive, so reload every time the tab is shown.
+  // Ionic keeps tab pages alive, so start watching each time the tab is shown.
+  // The job loads now, and again by itself whenever it changes (a new assignment, a job sent back,
+  // a cancel). The proof photo, note and location being prepared are never cleared by a refresh
+  // of the same job.
   ionViewWillEnter() {
-    this.load();
+    this.watcher?.stop();
+    this.watcher = this.live.watch('job', (silent) => this.load(silent));
   }
 
-  async load() {
-    this.loading = true;
-    this.cdr.markForCheck();
+  // Live updates: stop checking when the screen is left or destroyed.
+  ionViewWillLeave() {
+    this.stopWatching();
+  }
+
+  ngOnDestroy() {
+    this.stopWatching();
+  }
+
+  private stopWatching() {
+    this.watcher?.stop();
+    this.watcher = null;
+  }
+
+  // silent = true is a background refresh: no spinner and no error message.
+  async load(silent = false) {
+    if (!silent) {
+      this.loading = true;
+      this.cdr.markForCheck();
+    }
     try {
       const job = await this.jobService.loadCurrent();
       const changed = job?.id !== this.job?.id;
@@ -400,7 +424,9 @@ export class AssignedJobPage {
         void this.updateMyPosition();
       }
     } catch (e: any) {
-      await this.feedback.toast(e.message ?? 'Could not load your job.');
+      if (!silent) {
+        await this.feedback.toast(e.message ?? 'Could not load your job.');
+      }
     } finally {
       this.loading = false;
       this.cdr.markForCheck();

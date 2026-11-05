@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import {
   IonButton, IonButtons, IonContent, IonHeader, IonItem, IonLabel, IonList, IonTitle, IonToolbar,
@@ -6,6 +6,7 @@ import {
 import { StaffReview } from '../models/request.model';
 import { StaffJobService } from '../services/staff-job.service';
 import { FeedbackService } from '../services/feedback.service';
+import { LiveUpdateService, LiveWatcher } from '../services/live-update.service';
 
 // "Reviews" tab for staff (Step 7). Read-only: the ratings faculty left about this
 // staff member's finished jobs, newest first. Reviews are final, so there is nothing to edit.
@@ -111,31 +112,54 @@ import { FeedbackService } from '../services/feedback.service';
     }
   `],
 })
-export class StaffReviewsPage {
+export class StaffReviewsPage implements OnDestroy {
   private staffService = inject(StaffJobService);
   private feedback = inject(FeedbackService);
   private cdr = inject(ChangeDetectorRef);
+  private live = inject(LiveUpdateService);
+  private watcher: LiveWatcher | null = null;
 
   reviews: StaffReview[] = [];
   count = 0;
   average: number | null = null;
   loading = false;
 
-  // Ionic calls this every time the tab is shown, so new ratings appear without a manual refresh.
+  // Ionic calls this every time the tab is shown. The reviews load now, and again by itself
+  // whenever a new rating arrives, so nothing needs a manual refresh.
   ionViewWillEnter() {
-    this.load();
+    this.watcher?.stop();
+    this.watcher = this.live.watch('reviews', (silent) => this.load(silent));
   }
 
-  async load() {
-    this.loading = true;
-    this.cdr.markForCheck();
+  // Live updates: stop checking when the screen is left or destroyed.
+  ionViewWillLeave() {
+    this.stopWatching();
+  }
+
+  ngOnDestroy() {
+    this.stopWatching();
+  }
+
+  private stopWatching() {
+    this.watcher?.stop();
+    this.watcher = null;
+  }
+
+  // silent = true is a background refresh: no spinner and no error message.
+  async load(silent = false) {
+    if (!silent) {
+      this.loading = true;
+      this.cdr.markForCheck();
+    }
     try {
       const result = await this.staffService.loadReviews();
       this.reviews = result.reviews;
       this.count = result.summary.count;
       this.average = result.summary.average;
     } catch (e: any) {
-      await this.feedback.toast(e.message ?? 'Could not load your reviews.');
+      if (!silent) {
+        await this.feedback.toast(e.message ?? 'Could not load your reviews.');
+      }
     } finally {
       this.loading = false;
       this.cdr.markForCheck();

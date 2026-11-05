@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import {
@@ -8,6 +8,7 @@ import {
 import { FacultyRequestDetail, RequestStatus } from '../models/request.model';
 import { RequestService } from '../services/request.service';
 import { FeedbackService } from '../services/feedback.service';
+import { LiveUpdateService, LiveWatcher } from '../services/live-update.service';
 import { RequestPhotoComponent } from '../components/request-photo.component';
 import { PriorityBadgeComponent } from '../components/priority-badge.component';
 
@@ -232,36 +233,70 @@ const STATUS_COLORS: Record<RequestStatus, string> = {
     }
   `],
 })
-export class RequestDetailsPage {
+export class RequestDetailsPage implements OnDestroy {
   private route = inject(ActivatedRoute);
   private requestService = inject(RequestService);
   private feedback = inject(FeedbackService);
   private cdr = inject(ChangeDetectorRef);
+  private live = inject(LiveUpdateService);
+  private watcher: LiveWatcher | null = null;
 
   detail: FacultyRequestDetail | null = null;
   loading = false;
 
-  // Reload every time the page is shown, because the request may have changed meanwhile.
-  async ionViewWillEnter() {
-    await this.load();
+  // Load every time the page is shown, and again by itself whenever THIS request changes
+  // (status, proof, rating). The check only covers this one request.
+  ionViewWillEnter() {
+    this.watcher?.stop();
+    const id = this.requestId();
+    if (id === null) {
+      void this.load(false);   // shows the "link is not valid" message
+      return;
+    }
+    this.watcher = this.live.watch('request', (silent) => this.load(silent), id);
   }
 
-  private async load() {
+  // Live updates: stop checking when the screen is left or destroyed.
+  ionViewWillLeave() {
+    this.stopWatching();
+  }
+
+  ngOnDestroy() {
+    this.stopWatching();
+  }
+
+  private stopWatching() {
+    this.watcher?.stop();
+    this.watcher = null;
+  }
+
+  // The id from the address, or null when it is not a valid id.
+  private requestId(): number | null {
     const id = Number(this.route.snapshot.paramMap.get('id'));
-    if (!Number.isInteger(id) || id < 1) {
+    return Number.isInteger(id) && id >= 1 ? id : null;
+  }
+
+  // silent = true is a background refresh: no spinner, no error message, and the old details stay on screen.
+  private async load(silent = false) {
+    const id = this.requestId();
+    if (id === null) {
       this.detail = null;
       await this.feedback.toast('That request link is not valid.');
       this.cdr.markForCheck();
       return;
     }
 
-    this.loading = true;
-    this.cdr.markForCheck();
+    if (!silent) {
+      this.loading = true;
+      this.cdr.markForCheck();
+    }
     try {
       this.detail = await this.requestService.getMyRequestDetail(id);
     } catch (e: any) {
-      this.detail = null;
-      await this.feedback.toast(e.message ?? 'Could not load this request.');
+      if (!silent) {
+        this.detail = null;
+        await this.feedback.toast(e.message ?? 'Could not load this request.');
+      }
     } finally {
       this.loading = false;
       this.cdr.markForCheck();

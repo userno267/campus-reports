@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -7,6 +7,7 @@ import {
 } from '@ionic/angular';
 import { AdminRequestService } from '../services/admin-request.service';
 import { FeedbackService } from '../services/feedback.service';
+import { LiveUpdateService, LiveWatcher } from '../services/live-update.service';
 import { AdminRequestDetail, AdminRequestRow, RequestStatus } from '../models/request.model';
 import { PriorityBadgeComponent } from '../components/priority-badge.component';
 
@@ -275,10 +276,12 @@ const STATUS_ORDER: RequestStatus[] = [
     }
   `],
 })
-export class AllRequestsPage implements OnInit {
+export class AllRequestsPage implements OnDestroy {
   private adminService = inject(AdminRequestService);
   private feedback = inject(FeedbackService);
   private cdr = inject(ChangeDetectorRef);
+  private live = inject(LiveUpdateService);
+  private watcher: LiveWatcher | null = null;
 
   readonly statusOptions = STATUS_ORDER;
 
@@ -291,29 +294,47 @@ export class AllRequestsPage implements OnInit {
   // Counts every load. A slow answer for an old filter is ignored when a newer load started.
   private loadSeq = 0;
 
-  async ngOnInit() {
-    await this.load();
+  // Ionic keeps tab pages alive, so start watching each time the tab is shown.
+  // The list loads now, and again by itself whenever any request changes.
+  // While a detail is open the screen is left alone, so the admin is not thrown back to the list.
+  // backToList() reloads, so nothing is missed.
+  ionViewWillEnter() {
+    this.watcher?.stop();
+    this.watcher = this.live.watch('list', async (silent) => {
+      if (!this.selected) {
+        await this.load(silent);
+      }
+    });
   }
 
-  // Ionic keeps tab pages alive, so refresh each time the tab is shown.
-  // Skipped while a detail is open, so the admin is not thrown back to the list.
-  async ionViewWillEnter() {
-    if (!this.selected) {
-      await this.load();
-    }
+  // Live updates: stop checking when the screen is left or destroyed.
+  ionViewWillLeave() {
+    this.stopWatching();
   }
 
-  async load() {
+  ngOnDestroy() {
+    this.stopWatching();
+  }
+
+  private stopWatching() {
+    this.watcher?.stop();
+    this.watcher = null;
+  }
+
+  // silent = true is a background refresh: no spinner and no error message.
+  async load(silent = false) {
     const seq = ++this.loadSeq;
-    this.loading = true;
-    this.cdr.markForCheck();
+    if (!silent) {
+      this.loading = true;
+      this.cdr.markForCheck();
+    }
     try {
       const rows = await this.adminService.loadAll(this.statusFilter === 'all' ? null : this.statusFilter);
       if (seq === this.loadSeq) {
         this.requests = rows;
       }
     } catch (e: any) {
-      if (seq === this.loadSeq) {
+      if (seq === this.loadSeq && !silent) {
         await this.feedback.toast(e.message ?? 'Could not load the requests.');
       }
     } finally {

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, ChangeDetectorRef, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, ChangeDetectorRef, Component, OnDestroy, inject } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -9,6 +9,7 @@ import {
 import { RequestStatus, RequestSummary } from '../models/request.model';
 import { RequestService } from '../services/request.service';
 import { FeedbackService } from '../services/feedback.service';
+import { LiveUpdateService, LiveWatcher } from '../services/live-update.service';
 import { PriorityBadgeComponent } from '../components/priority-badge.component';
 
 // Friendly labels and badge colours for each status.
@@ -199,11 +200,13 @@ const RATING_CHOICES = [
     }
   `],
 })
-export class MyReportsPage {
+export class MyReportsPage implements OnDestroy {
   private requestService = inject(RequestService);
   private feedback = inject(FeedbackService);
   private cdr = inject(ChangeDetectorRef);
   private router = inject(Router);
+  private live = inject(LiveUpdateService);
+  private watcher: LiveWatcher | null = null;
   requests: RequestSummary[] = [];
   loading = false;
 
@@ -214,18 +217,39 @@ export class MyReportsPage {
   comment = '';
   saving = false;
 
-  // Ionic calls this every time the tab is shown, so the list is always fresh.
+  // Ionic calls this every time the tab is shown. The list loads now, and again by itself
+  // whenever one of my requests (or a rating on it) changes. No manual refresh needed.
   ionViewWillEnter() {
-    this.load();
+    this.watcher?.stop();
+    this.watcher = this.live.watch('list', (silent) => this.load(silent));
   }
 
-  async load() {
-    this.loading = true;
-    this.cdr.markForCheck();
+  // Live updates: stop checking when the screen is left or destroyed.
+  ionViewWillLeave() {
+    this.stopWatching();
+  }
+
+  ngOnDestroy() {
+    this.stopWatching();
+  }
+
+  private stopWatching() {
+    this.watcher?.stop();
+    this.watcher = null;
+  }
+
+  // silent = true is a background refresh: no spinner and no error message.
+  async load(silent = false) {
+    if (!silent) {
+      this.loading = true;
+      this.cdr.markForCheck();
+    }
     try {
       this.requests = await this.requestService.getMyRequests();
     } catch (e: any) {
-      await this.feedback.toast(e.message ?? 'Could not load your requests.');
+      if (!silent) {
+        await this.feedback.toast(e.message ?? 'Could not load your requests.');
+      }
     } finally {
       this.loading = false;
       this.cdr.markForCheck();

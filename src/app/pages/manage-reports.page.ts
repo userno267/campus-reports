@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -7,6 +7,7 @@ import {
 } from '@ionic/angular';
 import { AdminRequestService } from '../services/admin-request.service';
 import { FeedbackService } from '../services/feedback.service';
+import { LiveUpdateService, LiveWatcher } from '../services/live-update.service';
 import {
   AdminRequestDetail, AdminRequestRow, RequestPriority, RequestStatus, StaffMember,
 } from '../models/request.model';
@@ -359,11 +360,13 @@ interface AssignForm {
     }
   `],
 })
-export class ManageReportsPage implements OnInit {
+export class ManageReportsPage implements OnInit, OnDestroy {
   private adminService = inject(AdminRequestService);
   private feedback = inject(FeedbackService);
   private alertCtrl = inject(AlertController);
   private cdr = inject(ChangeDetectorRef);
+  private live = inject(LiveUpdateService);
+  private watcher: LiveWatcher | null = null;
 
   queue: AdminRequestRow[] = [];
   departments: Department[] = [];
@@ -380,9 +383,31 @@ export class ManageReportsPage implements OnInit {
     await this.loadDepartments();
   }
 
-  // Ionic keeps tab pages alive, so refresh the queue every time the tab is shown.
-  async ionViewWillEnter() {
-    await this.loadQueue();
+  // Ionic keeps tab pages alive, so start watching each time the tab is shown.
+  // The queue loads now, and again by itself whenever any request changes.
+  // While a request is open the screen is left alone (the assign form must not change under the admin).
+  // backToQueue() and every action reload the queue, so nothing is missed.
+  ionViewWillEnter() {
+    this.watcher?.stop();
+    this.watcher = this.live.watch('list', async (silent) => {
+      if (!this.selected) {
+        await this.loadQueue(silent);
+      }
+    });
+  }
+
+  // Live updates: stop checking when the screen is left or destroyed.
+  ionViewWillLeave() {
+    this.stopWatching();
+  }
+
+  ngOnDestroy() {
+    this.stopWatching();
+  }
+
+  private stopWatching() {
+    this.watcher?.stop();
+    this.watcher = null;
   }
 
   async loadDepartments() {
@@ -394,13 +419,18 @@ export class ManageReportsPage implements OnInit {
     }
   }
 
-  async loadQueue() {
-    this.loading = true;
-    this.cdr.markForCheck();
+  // silent = true is a background refresh: no spinner and no error message.
+  async loadQueue(silent = false) {
+    if (!silent) {
+      this.loading = true;
+      this.cdr.markForCheck();
+    }
     try {
       this.queue = await this.adminService.loadQueue();
     } catch (e: any) {
-      await this.feedback.toast(e.message ?? 'Could not load the request queue.');
+      if (!silent) {
+        await this.feedback.toast(e.message ?? 'Could not load the request queue.');
+      }
     } finally {
       this.loading = false;
       this.cdr.markForCheck();
