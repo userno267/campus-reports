@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { Department, RegisterInput, User } from '../models/user.model';
+import { DailyReport } from '../models/daily-report.model';
 import {
   AdminRequestDetail,
   AdminRequestRow,
@@ -257,6 +258,31 @@ export class ApiService {
     }
   }
 
+  // ===== DAILY REPORT (admin only, read-only) =====
+  // date is YYYY-MM-DD in Philippine time. Pass null for today (Philippine time) on the server.
+  async getDailyReport(date: string | null = null): Promise<DailyReport> {
+    try {
+      const url = date
+        ? `${API_BASE}/daily_report.php?date=${encodeURIComponent(date)}`
+        : `${API_BASE}/daily_report.php`;
+      const response: any = await firstValueFrom(this.http.get(url));
+      return response as DailyReport;
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Could not load the daily report');
+    }
+  }
+  // Faculty (or admin) adds a location that is not in the list yet.
+  // The server returns the existing one if the name already exists (ignoring case).
+  async createLocation(name: string): Promise<{ location: CampusLocation; created: boolean }> {
+    try {
+      const response: any = await firstValueFrom(
+        this.http.post(`${API_BASE}/locations.php?action=create`, { name })
+      );
+      return { location: response.location, created: !!response.created };
+    } catch (e: any) {
+      throw new Error(e.error?.error ?? 'Could not add the location');
+    }
+  }
   // ===== LIVE UPDATES =====
   // A tiny token that changes whenever the data behind a screen changes. No data, no photos.
   // Keeps the raw error on purpose: the polling helper ignores errors and tries again later.

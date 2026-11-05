@@ -53,6 +53,13 @@ export const routes: Routes = [
         canActivate: [roleGuard('admin')],
         loadComponent: () => import('./pages/manage-reports.page').then((m) => m.ManageReportsPage),
       },
+
+      // Daily report (admin only, read-only record). Named daily-report so it does not clash with manage-reports.
+      {
+        path: 'daily-report',
+        canActivate: [roleGuard('admin')],
+        loadComponent: () => import('./pages/daily-report.page').then((m) => m.DailyReportPage),
+      },
       // Step 9: the Control tab is removed (no route for it any more).
 
       // Step 5: the real staff job screen.

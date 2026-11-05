@@ -33,6 +33,14 @@ export class RequestService {
     return this.api.getLocations();
   }
 
+  // Adds a location the faculty member could not find. Returns the existing one if the name is already in use.
+  async createLocation(name: string): Promise<{ location: CampusLocation; created: boolean }> {
+    if (!this.auth.user()) throw new Error('Please log in again.');
+    const trimmed = name.trim();
+    if (trimmed === '') throw new Error('Please type a location name.');
+    return this.api.createLocation(trimmed);
+  }
+
   async getCategories(): Promise<RequestCategory[]> {
     return (await this.api.getCategories()) as RequestCategory[];
   }
@@ -45,8 +53,8 @@ export class RequestService {
     const description = form.description.trim();
 
     if (title.length < 3) throw new Error('Please enter a title (at least 3 characters).');
-    if (form.category_id === null) throw new Error('Please choose a category.');
-    if (form.location_id === null) throw new Error('Please choose a location.');
+    if (form.category_id === null) throw new Error('Please choose a category from the list.');
+    if (form.location_id === null) throw new Error('Please choose a location from the list.');
     if (description === '') throw new Error('Please describe the problem.');
     if (!form.before_photo) throw new Error('Please add a before photo.');
 

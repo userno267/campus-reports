@@ -10,6 +10,7 @@ import {
   clipboardOutline,
   peopleOutline,
   starOutline,
+  documentTextOutline,
 } from 'ionicons/icons';
 import { addIcons } from 'ionicons';
 import { AuthService } from '../services/auth.service';
@@ -57,6 +58,11 @@ import { AuthService } from '../services/auth.service';
             <ion-tab-button tab="manage-reports">
               <ion-icon name="clipboard-outline"></ion-icon>
               <ion-label>Manage</ion-label>
+            </ion-tab-button>
+
+            <ion-tab-button tab="daily-report">
+              <ion-icon name="document-text-outline"></ion-icon>
+              <ion-label>Report</ion-label>
             </ion-tab-button>
 
             <ion-tab-button tab="account">
@@ -176,6 +182,7 @@ export class TabsPage {
       clipboardOutline,
       peopleOutline,
       starOutline,
+      documentTextOutline,
     });
   }
 }

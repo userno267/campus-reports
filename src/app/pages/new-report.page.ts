@@ -6,12 +6,13 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import {
   IonButton, IonContent, IonHeader, IonInput, IonItem, IonList,
-  IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
+  IonTextarea, IonTitle, IonToolbar,
 } from '@ionic/angular';
 import { CampusLocation, RequestCategory } from '../models/request.model';
 import { NewRequestForm, RequestService } from '../services/request.service';
 import { FeedbackService } from '../services/feedback.service';
 import { DeviceService, GpsStatus, PhotoSource } from '../services/device.service';
+import { SearchablePickerComponent } from '../components/searchable-picker.component';
 import {
   WORKING_QUALITY, resizeDataUrlToBase64, resizeImageToBase64, stampPhoto,
 } from '../utils/photo.util';
@@ -19,14 +20,15 @@ import {
 // 'idle' = not asked yet, 'loading' = waiting for the device.
 type GpsState = 'idle' | 'loading' | GpsStatus;
 
-// Faculty form: title, category, location, description, a before photo, and the device location.
+// Faculty form: title, category, location (both searchable), description, a before photo, and the device location.
 @Component({
   selector: 'app-new-report',
   standalone: true,
   imports: [
     CommonModule, FormsModule,
     IonButton, IonContent, IonHeader, IonInput, IonItem, IonList,
-    IonSelect, IonSelectOption, IonTextarea, IonTitle, IonToolbar,
+    IonTextarea, IonTitle, IonToolbar,
+    SearchablePickerComponent,
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -41,23 +43,30 @@ type GpsState = 'idle' | 'loading' | GpsStatus;
                      maxlength="80" [(ngModel)]="title"></ion-input>
         </ion-item>
 
-        <ion-item>
-          <ion-select label="Category" labelPlacement="floating" interface="action-sheet"
-                      [(ngModel)]="categoryId">
-            @for (c of categories; track c.id) {
-              <ion-select-option [value]="c.id">{{ c.name }}</ion-select-option>
-            }
-          </ion-select>
-        </ion-item>
+        <!-- Type to search. The list narrows as you type. Pick one from the list. -->
+        <app-searchable-picker
+          #categoryPicker
+          label="Category"
+          placeholder="Type to search, e.g. Electrical"
+          [items]="categories"
+          [selectedId]="categoryId"
+          [disabled]="busy"
+          (selectedChange)="categoryId = $event"
+        />
 
-        <ion-item>
-          <ion-select label="Location" labelPlacement="floating" interface="action-sheet"
-                      [(ngModel)]="locationId">
-            @for (l of locations; track l.id) {
-              <ion-select-option [value]="l.id">{{ l.name }}</ion-select-option>
-            }
-          </ion-select>
-        </ion-item>
+        <!-- Type to search. If the room is not in the list, you can add it. -->
+        <app-searchable-picker
+          #locationPicker
+          label="Location"
+          placeholder="Type to search, e.g. Room 101"
+          [items]="locations"
+          [selectedId]="locationId"
+          [allowCreate]="true"
+          addNoun="location"
+          [disabled]="busy || addingLocation"
+          (selectedChange)="locationId = $event"
+          (created)="addLocation($event)"
+        />
 
         <ion-item>
           <ion-textarea label="Description" labelPlacement="floating"
@@ -133,6 +142,8 @@ export class NewReportPage implements OnInit {
 
   @ViewChild('cameraInput') cameraInput?: ElementRef<HTMLInputElement>;
   @ViewChild('galleryInput') galleryInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('categoryPicker') categoryPicker?: SearchablePickerComponent;
+  @ViewChild('locationPicker') locationPicker?: SearchablePickerComponent;
 
   categories: RequestCategory[] = [];
   locations: CampusLocation[] = [];
@@ -157,6 +168,7 @@ export class NewReportPage implements OnInit {
   longitude: number | null = null;
 
   busy = false;
+  addingLocation = false;
 
   // The text shown under "Location". Kept in one place so every state reads the same.
   get gpsText(): string {
@@ -180,7 +192,7 @@ export class NewReportPage implements OnInit {
 
   async ngOnInit() {
     try {
-      // Load both dropdown lists at the same time.
+      // Load both lists at the same time.
       [this.categories, this.locations] = await Promise.all([
         this.requests.getCategories(),
         this.requests.getLocations(),
@@ -195,6 +207,33 @@ export class NewReportPage implements OnInit {
   async ionViewWillEnter() {
     if (this.gpsState === 'idle') {
       await this.refreshLocation(false);
+    }
+  }
+
+  // Adds a location the faculty member typed that is not in the list yet.
+  // The server returns the existing one if the name is already in use, so there are no duplicates.
+  async addLocation(name: string) {
+    if (this.addingLocation) return;
+    this.addingLocation = true;
+    this.cdr.markForCheck();
+    try {
+      const result = await this.requests.createLocation(name);
+      const loc = result.location;
+      if (!this.locations.some((l) => l.id === loc.id)) {
+        this.locations = [...this.locations, loc].sort((a, b) => a.name.localeCompare(b.name));
+      }
+      this.locationId = loc.id;
+      await this.feedback.toast(
+        result.created
+          ? `Added "${loc.name}" to the list.`
+          : `"${loc.name}" is already in the list. Selected it.`,
+        'success',
+      );
+    } catch (e: any) {
+      await this.feedback.toast(e.message ?? 'Could not add the location.');
+    } finally {
+      this.addingLocation = false;
+      this.cdr.markForCheck();
     }
   }
 
@@ -345,6 +384,9 @@ export class NewReportPage implements OnInit {
     this.categoryId = null;
     this.locationId = null;
     this.description = '';
+    // Empty the two search boxes too, so the old text does not stay on screen.
+    this.categoryPicker?.clear();
+    this.locationPicker?.clear();
     this.stampSeq++;              // cancels any stamp that is still being drawn
     this.stamping = false;
     this.photoRaw = null;
